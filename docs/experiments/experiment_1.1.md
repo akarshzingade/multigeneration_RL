@@ -475,93 +475,162 @@ seeds:
 
 ---
 
-## 4. Key Decisions & Considerations (Requiring Review / Alignment)
+## 4. Key Design Decisions & Hardware Sizing
 
-The following key technical decisions govern the implementation of `EXP-1.1`. Each item details the options, architectural trade-offs, and recommended default choice:
+The following key technical decisions govern the implementation of `EXP-1.1`. All choices have been reviewed, aligned, and confirmed configurable in `TrainingRecipe` and YAML configuration:
 
-### 4.1 Decision 1: Format Reward Weight ($\lambda_{\text{format}}$) & Penalty Mechanics
+### 4.1 Decision 1: Format Reward Weight ($\lambda_{\text{format}}$) & Penalty Mechanics (Confirmed: $\lambda = 0.1$, Configurable)
 
-- **Context:** If the model fails to output `<think>...</think><answer>...</answer>`, the verifier cannot parse the answer. However, if format rewards are weighted too heavily, the policy engages in "format gaming"—generating perfectly formatted incorrect answers to maximize reward without engaging in reasoning.
-- **Options:**
-  - **Option A ($\lambda_{\text{format}} = 0.1$ additive, 0.0 floor - Recommended):** Correctness yields $+1.0$; valid format yields $+0.1$. Max reward $= 1.1$. Wrong answer with valid format $= 0.1$. Wrong answer with invalid format $= 0.0$.
-  - **Option B (Strict Multiplicative Gating $R = R_{\text{correct}} \times R_{\text{format}}$):** The model receives $0.0$ if formatting fails, regardless of whether the final answer is buried in prose.
-  - **Option C (Negative Format Penalty $-0.5$):** Penalize unformatted completions with negative rewards.
-- **Trade-off Analysis:** Option B causes severe gradient starvation early in training when the base 0.6B model has $<20\%$ format compliance—the policy receives zero gradient across entire groups and cannot learn. Option C introduces reward scaling instability and inflates advantage variance. Option A provides smooth shaping: the model rapidly learns formatting early on, followed by continuous mathematical optimization.
-- **Recommendation:** **Adopt Option A ($\lambda_{\text{format}} = 0.1$ additive).**
+- **Approved Selection:** **Option A ($\lambda_{\text{format}} = 0.1$ additive, 0.0 floor)**.
+- **Configurability:** Parameterized directly in `TrainingRecipe.format_reward_weight` and YAML `rewards.format_weight`. Allows testing alternative reward structures (e.g., negative penalties or multiplicative gating) by updating config values without modifying code.
+- **Why Selected:** Avoids early zero-gradient starvation on `Qwen/Qwen3-0.6B` while keeping mathematical correctness the primary objective.
 
 ---
 
-### 4.2 Decision 2: GRPO Group Size $G$ vs. VRAM & Advantage Variance
+### 4.2 Decision 2: GRPO Group Size $G=8$ & GPU Sizing Analysis
 
-- **Context:** GRPO normalizes advantages across $G$ candidate completions per prompt.
-- **Options:**
-  - **Option A ($G = 8$ - Recommended):** Standard DeepSeek / TRL configuration. Samples 8 rollouts per prompt.
-  - **Option B ($G = 4$):** Halves rollout generation time and VRAM footprint.
-  - **Option C ($G = 16$):** Produces higher quality advantage estimates with lower variance.
-- **Trade-off Analysis:** With $G=4$, groups frequently sample either all incorrect answers ($\{0, 0, 0, 0\}$) or all identical correct answers ($\{1, 1, 1, 1\}$). When $\sigma_r = 0$, all advantages become zero and the optimization step is wasted. $G=8$ provides an optimal balance between advantage variance reduction and single-GPU memory fit (fits comfortably on 24GB/40GB GPUs with `Qwen/Qwen3-0.6B`).
-- **Recommendation:** **Adopt Option A ($G = 8$).**
+- **Approved Selection:** **$G = 8$ candidate completions per prompt**.
+- **GPU Sizing Analysis for `Qwen/Qwen3-0.6B` ($G=8$, Seq Len $\le 1024$):**
+  
+  | Component | Memory Footprint (bfloat16) | Notes |
+  | :--- | :--- | :--- |
+  | **Frozen Base Model Weights** | $\approx 1.2\text{ GB}$ | $590\text{M params} \times 2\text{ bytes}$ |
+  | **Reference Policy (Base)** | $0.0\text{ GB}$ (shared) / $1.2\text{ GB}$ (isolated) | Can share base weights with adapters disabled |
+  | **LoRA Trainable Parameters** | $\approx 0.015\text{ GB}$ ($15\text{ MB}$) | $7.4\text{M params} \times 2\text{ bytes}$ ($r=16, \text{all linear}$) |
+  | **LoRA AdamW Optimizer States** | $\approx 0.060\text{ GB}$ ($60\text{ MB}$) | 2 states per param in FP32 ($7.4\text{M} \times 8\text{ bytes}$) |
+  | **LoRA Gradients** | $\approx 0.015\text{ GB}$ ($15\text{ MB}$) | FP16/BF16 gradients |
+  | **Rollout Generation KV Cache ($G=8$)** | $\approx 0.15\text{ GB}$ to $0.30\text{ GB}$ | $8 \times 1024\text{ tokens}$ across 24 layers |
+  | **Backward Activation Memory** | $\approx 2.5\text{ GB}$ to $4.5\text{ GB}$ | Forward activation graphs across 8 rollouts (with gradient checkpointing) |
+  | **PyTorch / CUDA Runtime Overhead** | $\approx 1.5\text{ GB}$ to $2.0\text{ GB}$ | CUDA runtime, kernels, buffers |
+  | **Total Peak VRAM Required** | **$\approx 7.0\text{ GB}$ to $9.5\text{ GB}$** | Comfortably fits within $\le 16\text{–}24\text{ GB}$ GPUs |
 
----
+#### GPU Selection Comparison (Pricing from User Catalog):
 
-### 4.3 Decision 3: Prompt Formatting in Training (0-Shot Instruction vs. 4-Shot Exemplars)
+| GPU | VRAM | Arch / CC | bfloat16 / FA2 | Price / hr | Fit / Recommendation Status |
+| :--- | :---: | :---: | :---: | :---: | :--- |
+| **Nvidia T4** | 16 GB | Turing (7.5) | **No** (FP16 only) | \$0.59 / h | ❌ **Incompatible**: Lacks native `bfloat16` hardware units (causes numerical instability/underflow in policy ratios) and lacks FlashAttention-2 support. |
+| **Nvidia L4** | **24 GB** | **Ada Lovelace (8.9)** | **Yes** | **\$0.80 / h** | **MINIMUM VIABLE & RECOMMENDED GPU**: Native `bfloat16`, full FlashAttention-2 & vLLM support, 24 GB VRAM provides $>14\text{ GB}$ safety headroom for $G=8$. Highly cost-efficient. |
+| **Nvidia A10** | 24 GB | Ampere (8.6) | **Yes** | \$1.10 / h | **Viable Alternative**: Fully compatible, good fallback if L4 instances are unavailable. |
+| **Nvidia L40S** | 48 GB | Ada Lovelace (8.9) | **Yes** | \$1.95 / h | **Fast Turnaround Option**: $2\times$ memory bandwidth and compute; completes training in $\approx 2.5$ hours. |
+| **Nvidia A100 (40 GB)** | 40 GB | Ampere (8.0) | **Yes** | \$2.10 / h | Viable, higher tensor core throughput. |
+| **Nvidia A100 (80 GB)** | 80 GB | Ampere (8.0) | **Yes** | \$2.50 / h | Viable, excessive VRAM for a 0.6B model. |
+| **Nvidia RTX PRO 6000** | 48 GB | Ada Lovelace (8.9) | **Yes** | \$3.03 / h | Overkill for 0.6B parameter model. |
+| **Nvidia H100 SXM5** | 80 GB | Hopper (9.0) | **Yes** | \$3.95 / h | Extreme overkill for 0.6B model; cost-inefficient for single-agent baseline. |
+| **Nvidia H200 SXM** | 141 GB | Hopper (9.0) | **Yes** | \$4.54 / h | Extreme overkill. |
+| **Nvidia B200 / B300** | 192+ GB | Blackwell (10.0) | **Yes** | \$6.25 / \$7.10 | Extreme overkill. |
 
-- **Context:** `EXP-0.1` evaluated `Qwen/Qwen3-0.6B` under both 0-shot and 4-shot prompting. For RL training, every prompt token incurs generation and backward pass FLOPs ($8 N_{\text{base}} T$).
-- **Options:**
-  - **Option A (0-Shot with Clear System Prompt - Recommended):** Include explicit instructions in the prompt (e.g., *"Solve the following math problem. Put your reasoning inside <think>...</think> and your final numerical answer inside <answer>...</answer>."*).
-  - **Option B (4-Shot Exemplars in Prompt):** Prepend the 4 fixed GSM8K demonstrations to every training prompt.
-- **Trade-off Analysis:** Option B inflates prompt length from $\approx 60$ tokens to $\approx 450$ tokens per sample. Across $G=8$ rollouts, prepending 4 exemplars consumes $>65\%$ of the total $1.0 \times 10^{16}$ FLOP budget purely on processing fixed exemplar prompts rather than learning new problem rollouts. Option A trains the policy to internalize the format directly into model weights while maximizing unique training problem throughput.
-- **Recommendation:** **Adopt Option A (0-Shot with explicit system/user instructions).**
-
----
-
-### 4.4 Decision 4: Reference Policy KL Penalty ($\beta$) & Policy Drift Control
-
-- **Context:** GRPO uses $\beta D_{\text{KL}}(\pi_\theta \parallel \pi_{\text{ref}})$ to prevent the policy from collapsing or drifting too far from the base language distribution.
-- **Options:**
-  - **Option A (Fixed $\beta = 0.04$ - Recommended):** DeepSeekMath standard.
-  - **Option B ($\beta = 0.0$ / R1-Zero Style):** No KL penalty; relies solely on clipping $\epsilon_{\text{clip}} = 0.2$ to constrain updates.
-  - **Option C (Adaptive KL Target):** Dynamically scales $\beta$ up or down based on current KL divergence.
-- **Trade-off Analysis:** While 70B+ models can train with $\beta=0.0$ (DeepSeek-R1-Zero), small 0.6B models are highly vulnerable to policy collapse, repetitive token degeneration, and language degeneration when $\beta=0$. A fixed $\beta=0.04$ provides stable regularization without hyperparameter tuning overhead.
-- **Recommendation:** **Adopt Option A (Fixed $\beta = 0.04$).**
-
----
-
-### 4.5 Decision 5: LoRA Target Modules Scope
-
-- **Context:** PEFT allows adapting only attention projections (`q_proj`, `v_proj`) or all linear projections across both attention and MLP blocks.
-- **Options:**
-  - **Option A (All Linear Projections - Recommended):** `q_proj`, `k_proj`, `v_proj`, `o_proj`, `gate_proj`, `up_proj`, `down_proj`.
-  - **Option B (Attention Only):** `q_proj`, `v_proj`.
-- **Trade-off Analysis:** For mathematical reasoning, multi-layer perceptron (MLP) blocks store factual associations and step-by-step procedural transforms. Adapting all linear layers adds negligible parameter overhead ($\sim 1.2\%$ vs $\sim 0.4\%$, still $<30\text{ MB}$ per adapter) while yielding substantially higher downstream reasoning performance.
-- **Recommendation:** **Adopt Option A (All Linear Projections).**
+> **Conclusion for Decision 2:** The **minimum GPU required** is the **Nvidia L4 (24 GB) at \$0.80 / h**. It has full hardware support for `bfloat16`, FlashAttention-2, and vLLM, with more than double the required VRAM headroom. For detailed wall-clock time, per-second billing calculations, and a side-by-side comparison with the A10G and T4 on Modal, see the dedicated report: [A10 vs. L4 vs. T4 Cost & Runtime Analysis](../cost_analysis/a10vsl4vst4_expt1.1.md).
 
 ---
 
-### 4.6 Decision 6: Intermediate Checkpointing & Evaluation Cadence
+### 4.3 Decision 3: Prompt Formatting in Training (Confirmed: 0-Shot, Configurable)
 
-- **Context:** To plot accurate learning curves across the $1.0 \times 10^{16}$ FLOP allocation and support peer-distillation branching in later experiments (`EXP-3.1`), intermediate checkpoints must be saved.
-- **Options:**
-  - **Option A (FLOP-Based Intervals - Recommended):** Evaluate and save adapters every $2.0 \times 10^{15}$ FLOPs (producing checkpoints at 20%, 40%, 60%, 80%, and 100% of budget).
-  - **Option B (Step-Based Intervals):** Evaluate and save every 250 global steps.
-- **Trade-off Analysis:** Step-based checkpointing ignores dynamic completion length variation. As the model learns longer chains of thought, steps become more compute-heavy. FLOP-based intervals guarantee that learning curves directly measure performance per unit of hardware-invariant compute.
-- **Recommendation:** **Adopt Option A (Evaluate & checkpoint every $2.0 \times 10^{15}$ FLOPs).**
+- **Approved Selection:** **Option A (0-Shot with explicit XML format instructions)**.
+- **Configurability:** Configurable via `TrainingRecipe.num_shots` (default: 0) and `GSM8KEvaluator` dataset formatters.
+- **Why Selected:** Prepending 4-shot exemplars ($450$ tokens) into $G=8$ rollouts wastes $>65\%$ of the total $1.0 \times 10^{16}$ FLOP budget processing fixed demonstration tokens instead of exploring new reasoning trajectories.
 
 ---
 
-### 4.7 Decision 7: Hardware & Execution Backend Fallback (CUDA vLLM vs. macOS MPS/CPU)
+### 4.4 Decision 4: Reference Policy KL Penalty ($\beta$) (Confirmed: Fixed $\beta = 0.04$, Configurable)
 
-- **Context:** High-throughput GRPO rollout sampling relies on `vllm` (`use_vllm=True` in `GRPOConfig`). However, developers and CI environments frequently run on macOS (Apple Silicon MPS) or CPU where `vllm` is unsupported.
-- **Options:**
-  - **Option A (Auto-Detecting Dynamic Backend - Recommended):** If `torch.cuda.is_available()`, enable `vllm` rollout acceleration. If CUDA is unavailable, gracefully fall back to Hugging Face native generation (`use_vllm=False`), allowing local testing and unit tests to pass cleanly on macOS.
-  - **Option B (Hard CUDA Dependency):** Require CUDA and fail immediately if `vllm` cannot be initialized.
-- **Trade-off Analysis:** Option A preserves fast production training on GPU clusters while maintaining testability and developer experience on Mac workstations.
-- **Recommendation:** **Adopt Option A (Auto-detecting dynamic backend).**
+- **Approved Selection:** **Option A (Fixed $\beta = 0.04$ with Schulman unbiased estimator)**.
+- **Configurability:** Parameterized in `TrainingRecipe.kl_beta` and YAML `grpo.kl_beta`.
+- **Why Selected:** Small 0.6B models quickly degenerate under $\beta = 0.0$ (R1-Zero style). $\beta = 0.04$ enforces policy stability without sacrificing mathematical exploration.
 
 ---
 
-## 5. Execution Workflow & Acceptance Gate
+### 4.5 Decision 5: LoRA Target Projection Scope (Confirmed: All Linear, Configurable)
 
-### 5.1 CLI Execution Commands
+- **Approved Selection:** **Option A (All Linear Projections: `q, k, v, o, gate, up, down`)**.
+- **Configurability:** Parameterized in `TrainingRecipe.target_modules` and YAML `peft.target_modules`.
+- **Why Selected:** Adapting MLP layers is essential for mathematical derivation and factual reasoning while maintaining a small checkpoint footprint ($\sim 28\text{ MB}$).
+
+---
+
+### 4.6 Decision 6: Checkpointing & Evaluation Cadence (Confirmed: FLOP-Based)
+
+- **Approved Selection:** **Option A (FLOP-based intervals every $2.0 \times 10^{15}$ FLOPs)**.
+- **Configurability:** Parameterized in YAML `budget.intermediate_eval_interval_flops`.
+- **Why Selected:** Ensures hardware-invariant evaluation cadence directly linked to cumulative compute rather than arbitrary step counts.
+
+---
+
+### 4.7 Decision 7: Hardware & Execution Backend Fallback (Confirmed: Auto-Detecting)
+
+- **Approved Selection:** **Option A (Auto-detecting dynamic backend)**.
+- **Behavior:** Uses `vllm` acceleration when CUDA is available; falls back automatically to Hugging Face generation on macOS (Apple Silicon MPS) or CPU to maintain developer testability.
+
+---
+
+## 5. Compute Budget: Calculation, Accounting, & Strict Enforcement
+
+A central premise of the Multigen-RL framework is **strict compute parity**. This section details how FLOPs are calculated, tracked, and used to restrict training.
+
+### 5.1 How FLOPs Are Calculated Per Step
+
+A single optimization step of GRPO processes a prompt query $q$ and $G=8$ generated completions $\{o_1, \dots, o_G\}$. The total FLOPs consumed in step $k$ are computed across three distinct phases:
+
+```mermaid
+flowchart LR
+    subgraph Step_FLOP_Breakdown["Per-Step FLOP Calculation"]
+        direction TB
+        P1["Phase 1: Rollout Generation<br>2 * N_base * sum(T_prompt + T_gen,i)"]
+        P2["Phase 2: Reference Policy Pass<br>2 * N_base * sum(T_prompt + T_gen,i)"]
+        P3["Phase 3: LoRA Policy Update<br>(4 * N_base + 6 * N_lora) * sum(T_prompt + T_gen,i)"]
+        P1 --> SUM["Total Step FLOPs = (8 * N_base + 6 * N_lora) * sum(T_total,i)"]
+        P2 --> SUM
+        P3 --> SUM
+    end
+```
+
+1. **Phase 1: Autoregressive Rollout Generation:**
+   Generating $G$ candidate solutions autoregressively requires 2 FLOPs per parameter per token (1 multiply + 1 accumulate):
+   $$\text{FLOPs}_{\text{rollout}} = \sum_{i=1}^{G} 2 \times N_{\text{base}} \times (T_{\text{prompt}} + T_{\text{gen}, i})$$
+
+2. **Phase 2: Reference Model Log-Probability Pass:**
+   Evaluating reference logits $\pi_{\text{ref}}(o_i \mid q)$ for KL divergence regularization requires a forward pass over prompt and completion tokens:
+   $$\text{FLOPs}_{\text{ref}} = \sum_{i=1}^{G} 2 \times N_{\text{ref}} \times (T_{\text{prompt}} + T_{\text{gen}, i}) = \sum_{i=1}^{G} 2 \times N_{\text{base}} \times (T_{\text{prompt}} + T_{\text{gen}, i})$$
+
+3. **Phase 3: LoRA Policy Gradient Update (Forward + Backward):**
+   - **Forward pass:** Activations pass through base weights and LoRA adapters: $2 \times (N_{\text{base}} + N_{\text{lora}}) \times T \approx 2 N_{\text{base}} T$.
+   - **Backward pass:** Gradients $\nabla_X \mathcal{L}$ backpropagate through frozen base weights to earlier layers ($2 N_{\text{base}} T$), but weight gradients $\nabla_W \mathcal{L}$ are only computed for trainable LoRA parameters ($4 N_{\text{lora}} T$).
+   $$\text{FLOPs}_{\text{backward}} = 2 N_{\text{base}} T + 4 N_{\text{lora}} T$$
+   $$\text{FLOPs}_{\text{phase3}} = \sum_{i=1}^{G} \left[ 4 \times N_{\text{base}} + 6 \times N_{\text{lora}} \right] \times (T_{\text{prompt}} + T_{\text{gen}, i})$$
+
+4. **Consolidated Step Formula:**
+   Combining all three phases:
+   $$\text{FLOPs}_{\text{step}} = \sum_{i=1}^{G} \left( 8 \times N_{\text{base}} + 6 \times N_{\text{lora}} \right) \times (T_{\text{prompt}} + T_{\text{gen}, i})$$
+   For `Qwen/Qwen3-0.6B` ($N_{\text{base}} = 590\text{M}$, $N_{\text{lora}} = 7.4\text{M}$):
+   $$\text{Coefficient per token} \approx (8 \times 590 \times 10^6) + (6 \times 7.4 \times 10^6) \approx 4.764 \times 10^9 \text{ FLOPs / token}$$
+
+### 5.2 How the Budget Is Restricted (The Enforcement Mechanism)
+
+The training loop is strictly bounded at $1.0 \times 10^{16}$ FLOPs via `FLOPBudgetCallback` (`multigen/accounting/tracker.py`), subclassing Hugging Face's `TrainerCallback`:
+
+1. **Stateful Accumulation:**
+   At the start of training, `FLOPAccumulator` is initialized with $N_{\text{base}}$ and $N_{\text{lora}}$.
+2. **Post-Step Token Inspection (`on_step_end`):**
+   At the conclusion of each optimizer step $k$, `FLOPBudgetCallback` intercepts the active batch tensors:
+   - Extracts the exact prompt lengths $T_{\text{prompt}}$ and generated completion lengths $T_{\text{gen}, i}$ across all $G=8$ rollouts.
+   - Computes $\Delta \text{FLOPs}_k = \sum_{i=1}^G 4.764 \times 10^9 \times (T_{\text{prompt}} + T_{\text{gen}, i})$.
+   - Updates `cumulative_flops += Delta_FLOPs_k`.
+3. **Budget Exhaustion Halting:**
+   ```python
+   if self.accumulator.cumulative_flops >= self.target_budget_flops: # 1.0e16
+       logger.info(f"Budget exhausted: {self.accumulator.cumulative_flops:.3e} >= {self.target_budget_flops:.3e} FLOPs. Halting training.")
+       control.should_training_stop = True
+       self._save_checkpoint(args, state, model)
+   ```
+4. **Graceful Early Termination:**
+   Setting `control.should_training_stop = True` signals `trl.GRPOTrainer` to complete the current optimizer update, flush logging buffers, save the final adapter checkpoint, and exit the training loop cleanly without corrupted tensors or mid-step aborts.
+5. **Precision Guarantee:**
+   Because each step consumes $\approx 1.17 \times 10^{13}$ FLOPs (which is $\approx 0.11\%$ of the total $1.0 \times 10^{16}$ FLOP budget), the run halts within **$\pm 0.2\%$** of the targeted compute budget.
+
+---
+
+## 6. Execution Workflow & Acceptance Gate
+
+### 6.1 CLI Execution Commands
 
 Execute the baseline across 3 seeds to establish statistical significance:
 
@@ -594,7 +663,7 @@ python scripts/evaluate_baseline.py \
     --output evals/exp1_1_grpo_seed42_test.json
 ```
 
-### 5.2 Acceptance Criteria Checklist
+### 6.2 Acceptance Criteria Checklist
 
 - [ ] **Unit Tests Passing:** `tests/test_schema.py`, `tests/test_population_dag.py`, and `tests/test_grpo_runner.py` pass 100%.
 - [ ] **Loss & Gradient Stability:** Policy loss converges smoothly; gradient norms remain bounded ($< 1.0$) with 0 unhandled NaN or Inf exceptions.
@@ -606,7 +675,7 @@ python scripts/evaluate_baseline.py \
 
 ---
 
-## 6. Artifact Specifications & Outputs
+## 7. Artifact Specifications & Outputs
 
 Upon successful completion of `EXP-1.1`, the following artifacts will be saved to disk:
 

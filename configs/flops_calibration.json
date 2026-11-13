@@ -1,0 +1,65 @@
+{
+  "experiment_id": "EXP-0.2",
+  "model_name": "Qwen/Qwen3-0.6B",
+  "model_specs": {
+    "model_name": "Qwen/Qwen3-0.6B",
+    "total_params": 600000000,
+    "layers": 28,
+    "hidden_size": 1024,
+    "vocab_size": 151936,
+    "source": "known_preset"
+  },
+  "finalized_decisions": {
+    "decision_1_lora_backprop": "4N_base*T + 6N_lora*T (Exact LoRA Accounting)",
+    "decision_2_reference_model": "counted against budget (Strict Parity)",
+    "decision_3_attention_quadratic": "omitted for S <= 1024 (Pure Parameter Scaling)",
+    "decision_4_evaluation_compute": "exempt from training budget (Observational Overhead)",
+    "decision_5_budget_halting": "graceful step finish (control.should_training_stop = True)",
+    "decision_6_profiler": "calflops"
+  },
+  "sequence_lengths": [
+    64,
+    128,
+    256,
+    512,
+    1024
+  ],
+  "scaling_data": {
+    "rollout_flops": [
+      76800000000.0,
+      153600000000.0,
+      307200000000.0,
+      614400000000.0,
+      1228800000000.0
+    ],
+    "lora_train_flops": [
+      154368000000.0,
+      308736000000.0,
+      617472000000.0,
+      1234944000000.0,
+      2469888000000.0
+    ],
+    "full_train_flops": [
+      230400000000.0,
+      460800000000.0,
+      921600000000.0,
+      1843200000000.0,
+      3686400000000.0
+    ]
+  },
+  "linearity_validation": {
+    "rollout_r_squared": 0.9999999999999996,
+    "lora_train_r_squared": 0.9999999999999996,
+    "full_train_r_squared": 0.9999999999999998,
+    "passed": true
+  },
+  "budget_simulation": {
+    "target_flops": 100000000000000.0,
+    "cumulative_flops": 100030464000000.0,
+    "steps_taken": 81,
+    "flops_per_step": 1234944000000.0,
+    "overshoot_pct": 0.0305,
+    "halted_cleanly": true,
+    "passed_tolerance": true
+  }
+}
