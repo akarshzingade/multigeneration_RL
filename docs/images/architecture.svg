@@ -1,0 +1,211 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1150 780" width="100%" height="100%" style="background:#0f172a; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+  <defs>
+    <!-- Gradients -->
+    <linearGradient id="headerGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#818cf8"/>
+    </linearGradient>
+    
+    <linearGradient id="ctrlGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+
+    <linearGradient id="optunaCard" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#1d4ed8"/>
+      <stop offset="100%" stop-color="#2563eb"/>
+    </linearGradient>
+
+    <linearGradient id="trainCard" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#6d28d9"/>
+      <stop offset="100%" stop-color="#7c3aed"/>
+    </linearGradient>
+
+    <linearGradient id="evalCard" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#047857"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+
+    <linearGradient id="storageCard" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#b45309"/>
+      <stop offset="100%" stop-color="#d97706"/>
+    </linearGradient>
+
+    <!-- Filters -->
+    <filter id="cardShadow" x="-5%" y="-5%" width="110%" height="115%" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000000" flood-opacity="0.4"/>
+    </filter>
+    <filter id="glowCyan" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+
+    <!-- Markers -->
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#38bdf8" />
+    </marker>
+    <marker id="arrowPurple" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#a78bfa" />
+    </marker>
+    <marker id="arrowGreen" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#34d399" />
+    </marker>
+    <marker id="arrowAmber" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#fbbf24" />
+    </marker>
+  </defs>
+
+  <!-- Title Header -->
+  <text x="575" y="45" text-anchor="middle" font-size="24" font-weight="800" fill="url(#headerGrad)" letter-spacing="0.5">MULTIGEN-RL: SYSTEM ARCHITECTURE &amp; OPEN-SOURCE INTEGRATION</text>
+  <text x="575" y="70" text-anchor="middle" font-size="13" font-weight="400" fill="#94a3b8">Population-Based Continual Model Development &amp; Adaptive Controller Loop</text>
+
+  <!-- ==================== SUBSYSTEM 1: CONTROLLER & LINEAGE (LEFT) ==================== -->
+  <g filter="url(#cardShadow)">
+    <rect x="40" y="100" width="310" height="430" rx="16" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+    <rect x="40" y="100" width="310" height="48" rx="16" fill="url(#optunaCard)"/>
+    <text x="60" y="130" font-size="15" font-weight="700" fill="#ffffff">1. Controller &amp; Population State</text>
+
+    <!-- Optuna Multi-Objective Engine -->
+    <rect x="58" y="165" width="274" height="105" rx="10" fill="#0f172a" stroke="#3b82f6" stroke-width="1.2"/>
+    <text x="72" y="190" font-size="13" font-weight="700" fill="#60a5fa">Optuna Multi-Objective Study</text>
+    <text x="72" y="210" font-size="11" fill="#cbd5e1">&#8226; Pareto Frontier Optimization</text>
+    <text x="72" y="228" font-size="11" fill="#cbd5e1">&#8226; Objectives: Acc &#8593; | Diversity &#8593; | FLOPs &#8595;</text>
+    <text x="72" y="246" font-size="11" fill="#cbd5e1">&#8226; Samplers: NSGA-II / MOTPE</text>
+
+    <!-- NetworkX Lineage DAG -->
+    <rect x="58" y="285" width="274" height="110" rx="10" fill="#0f172a" stroke="#38bdf8" stroke-width="1.2"/>
+    <text x="72" y="310" font-size="13" font-weight="700" fill="#38bdf8">NetworkX Lineage DAG</text>
+    <text x="72" y="330" font-size="11" fill="#cbd5e1">&#8226; Parent &#8594; Child (RL / SFT Mutation)</text>
+    <text x="72" y="348" font-size="11" fill="#cbd5e1">&#8226; Teacher &#8594; Student (Distillation Link)</text>
+    <text x="72" y="366" font-size="11" fill="#cbd5e1">&#8226; Checkpoint Ancestry &amp; Subtree Paths</text>
+
+    <!-- Pydantic Schemas -->
+    <rect x="58" y="410" width="274" height="100" rx="10" fill="#0f172a" stroke="#64748b" stroke-width="1"/>
+    <text x="72" y="433" font-size="13" font-weight="700" fill="#94a3b8">Pydantic Schemas &amp; Metadata</text>
+    <text x="72" y="453" font-size="11" fill="#cbd5e1">&#8226; ModelNode (id, parent_ids, teachers)</text>
+    <text x="72" y="471" font-size="11" fill="#cbd5e1">&#8226; TrainingRecipe (mode, lr, G, weights)</text>
+    <text x="72" y="489" font-size="11" fill="#cbd5e1">&#8226; CapabilityProfile (acc, pass@k, errors)</text>
+  </g>
+
+  <!-- ==================== SUBSYSTEM 2: EXPERIMENT DISPATCHER (CENTER TOP) ==================== -->
+  <g filter="url(#cardShadow)">
+    <rect x="420" y="100" width="310" height="95" rx="14" fill="#1e293b" stroke="#0ea5e9" stroke-width="1.5"/>
+    <text x="575" y="128" text-anchor="middle" font-size="14" font-weight="700" fill="#38bdf8">2. Population Experiment Dispatcher</text>
+    <text x="575" y="150" text-anchor="middle" font-size="11" fill="#e2e8f0">Receives Optuna Trial: (Student, Teacher, Recipe, Budget)</text>
+    <text x="575" y="168" text-anchor="middle" font-size="11" fill="#94a3b8">Routes to Training Runner &amp; Enforces Compute Budget</text>
+  </g>
+
+  <!-- ==================== SUBSYSTEM 3: TRAINING ENGINES (CENTER-BOTTOM) ==================== -->
+  <g filter="url(#cardShadow)">
+    <rect x="420" y="240" width="310" height="500" rx="16" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+    <rect x="420" y="240" width="310" height="48" rx="16" fill="url(#trainCard)"/>
+    <text x="440" y="270" font-size="15" font-weight="700" fill="#ffffff">3. Modular Training Engines (trl)</text>
+
+    <!-- RL Engine (GRPO) -->
+    <rect x="438" y="305" width="274" height="125" rx="10" fill="#0f172a" stroke="#8b5cf6" stroke-width="1.2"/>
+    <text x="452" y="328" font-size="13" font-weight="700" fill="#a78bfa">RL Engine (trl.GRPOTrainer)</text>
+    <text x="452" y="348" font-size="11" fill="#cbd5e1">&#8226; Group Relative Policy Optimization</text>
+    <text x="452" y="366" font-size="11" fill="#cbd5e1">&#8226; vLLM Rollout Backend (use_vllm=True)</text>
+    <text x="452" y="384" font-size="11" fill="#cbd5e1">&#8226; Group Size G=8, Critic-free Advantages</text>
+    <text x="452" y="402" font-size="11" fill="#cbd5e1">&#8226; Clipped Surrogate + KL Penalty (&#946;)</text>
+
+    <!-- Distillation Engine -->
+    <rect x="438" y="445" width="274" height="135" rx="10" fill="#0f172a" stroke="#a855f7" stroke-width="1.2"/>
+    <text x="452" y="468" font-size="13" font-weight="700" fill="#c084fc">Distillation Engine (vLLM + SFT)</text>
+    <text x="452" y="488" font-size="11" fill="#cbd5e1">&#8226; Teacher Rollouts via vLLM Sampling</text>
+    <text x="452" y="506" font-size="11" fill="#cbd5e1">&#8226; math-verify Filtering (Correct paths only)</text>
+    <text x="452" y="524" font-size="11" fill="#cbd5e1">&#8226; Student SFT via trl.SFTTrainer</text>
+    <text x="452" y="542" font-size="11" fill="#cbd5e1">&#8226; Tests Cross-Model Learning (H3)</text>
+
+    <!-- Mixed RL + KD Engine -->
+    <rect x="438" y="595" width="274" height="125" rx="10" fill="#0f172a" stroke="#d946ef" stroke-width="1.2"/>
+    <text x="452" y="618" font-size="13" font-weight="700" fill="#f0abfc">Mixed Engine (RL + KD Hybrid)</text>
+    <text x="452" y="638" font-size="11" fill="#cbd5e1">&#8226; Interleaved KD SFT &amp; GRPO Bursts</text>
+    <text x="452" y="656" font-size="11" fill="#cbd5e1">&#8226; Joint Reward &amp; Teacher Regularization</text>
+    <text x="452" y="674" font-size="11" fill="#cbd5e1">&#8226; Tests Mixed Learning Hypothesis (H1)</text>
+    <text x="452" y="692" font-size="11" fill="#cbd5e1">&#8226; Matched FLOPs Evaluation Budget</text>
+  </g>
+
+  <!-- ==================== SUBSYSTEM 4: EVALUATION & REWARDS (RIGHT) ==================== -->
+  <g filter="url(#cardShadow)">
+    <rect x="800" y="100" width="310" height="430" rx="16" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+    <rect x="800" y="100" width="310" height="48" rx="16" fill="url(#evalCard)"/>
+    <text x="820" y="130" font-size="15" font-weight="700" fill="#ffffff">4. Verification &amp; Evaluation</text>
+
+    <!-- math-verify Rewards -->
+    <rect x="818" y="165" width="274" height="105" rx="10" fill="#0f172a" stroke="#10b981" stroke-width="1.2"/>
+    <text x="832" y="190" font-size="13" font-weight="700" fill="#34d399">math-verify &amp; Rewards</text>
+    <text x="832" y="210" font-size="11" fill="#cbd5e1">&#8226; R_correct: Math equivalence verification</text>
+    <text x="832" y="228" font-size="11" fill="#cbd5e1">&#8226; R_format: XML &lt;think&gt; &amp; &lt;answer&gt; tags</text>
+    <text x="832" y="246" font-size="11" fill="#cbd5e1">&#8226; R_len: Brevity vs. verbose exploration</text>
+
+    <!-- GSM8K Benchmark -->
+    <rect x="818" y="285" width="274" height="110" rx="10" fill="#0f172a" stroke="#059669" stroke-width="1.2"/>
+    <text x="832" y="310" font-size="13" font-weight="700" fill="#6ee7b7">GSM8K Benchmark Harness</text>
+    <text x="832" y="330" font-size="11" fill="#cbd5e1">&#8226; Hugging Face datasets: openai/gsm8k</text>
+    <text x="832" y="348" font-size="11" fill="#cbd5e1">&#8226; Dev Split (500 problems for search)</text>
+    <text x="832" y="366" font-size="11" fill="#cbd5e1">&#8226; Test Split (819 untouched held-out)</text>
+
+    <!-- Diversity & Complementarity -->
+    <rect x="818" y="410" width="274" height="100" rx="10" fill="#0f172a" stroke="#14b8a6" stroke-width="1.2"/>
+    <text x="832" y="433" font-size="13" font-weight="700" fill="#2dd4bf">Diversity Profiler (H2 &amp; H5)</text>
+    <text x="832" y="453" font-size="11" fill="#cbd5e1">&#8226; Pairwise Error Orthogonality (Jaccard)</text>
+    <text x="832" y="471" font-size="11" fill="#cbd5e1">&#8226; Oracle Ensemble Pass@1 Coverage</text>
+    <text x="832" y="489" font-size="11" fill="#cbd5e1">&#8226; Majority Voting Consensus Evaluation</text>
+  </g>
+
+  <!-- ==================== SUBSYSTEM 5: STORAGE & ACCOUNTING (BOTTOM SIDES) ==================== -->
+  <!-- PEFT Storage (Left Bottom) -->
+  <g filter="url(#cardShadow)">
+    <rect x="40" y="555" width="310" height="185" rx="16" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+    <rect x="40" y="555" width="310" height="42" rx="16" fill="url(#storageCard)"/>
+    <text x="60" y="582" font-size="14" font-weight="700" fill="#ffffff">5. PEFT Adapters &amp; Checkpoints</text>
+    
+    <text x="60" y="620" font-size="12" font-weight="700" fill="#fbbf24">&#8226; Shared Frozen Base Model</text>
+    <text x="75" y="638" font-size="11" fill="#94a3b8">Qwen2.5-0.5B / Qwen3-0.6B (Single copy)</text>
+    <text x="60" y="662" font-size="12" font-weight="700" fill="#fbbf24">&#8226; Lightweight LoRA Adapters</text>
+    <text x="75" y="680" font-size="11" fill="#94a3b8">~20MB per population candidate</text>
+    <text x="60" y="704" font-size="12" font-weight="700" fill="#fbbf24">&#8226; Lineage Tagging</text>
+    <text x="75" y="722" font-size="11" fill="#94a3b8">Metadata stored alongside weights</text>
+  </g>
+
+  <!-- Compute Accounting & WandB (Right Bottom) -->
+  <g filter="url(#cardShadow)">
+    <rect x="800" y="555" width="310" height="185" rx="16" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+    <rect x="800" y="555" width="310" height="42" rx="16" fill="#334155"/>
+    <text x="820" y="582" font-size="14" font-weight="700" fill="#ffffff">6. Compute Accounting &amp; Tracking</text>
+    
+    <text x="820" y="620" font-size="12" font-weight="700" fill="#38bdf8">&#8226; FLOPs Counter (multigen.accounting)</text>
+    <text x="835" y="638" font-size="11" fill="#94a3b8">Rollout (2NT) + Train (6NT) + KD (2NT)</text>
+    <text x="820" y="662" font-size="12" font-weight="700" fill="#38bdf8">&#8226; Compute Parity Enforcement</text>
+    <text x="835" y="680" font-size="11" fill="#94a3b8">Equal FLOP budget per test condition</text>
+    <text x="820" y="704" font-size="12" font-weight="700" fill="#38bdf8">&#8226; Weights &amp; Biases / MLflow</text>
+    <text x="835" y="722" font-size="11" fill="#94a3b8">Live tracking of loss &amp; Pareto curves</text>
+  </g>
+
+  <!-- ==================== CONNECTING ARROWS & PATHS ==================== -->
+  <!-- 1. Optuna -> Dispatcher -->
+  <path d="M 350 148 L 418 148" fill="none" stroke="#38bdf8" stroke-width="2.5" marker-end="url(#arrow)" />
+  <text x="384" y="140" text-anchor="middle" font-size="10" font-weight="700" fill="#38bdf8">Dispatch Trial</text>
+
+  <!-- 2. Dispatcher -> Training Engines -->
+  <path d="M 575 195 L 575 238" fill="none" stroke="#a78bfa" stroke-width="2.5" marker-end="url(#arrowPurple)" />
+  <text x="590" y="222" font-size="10" font-weight="700" fill="#a78bfa">Recipe &amp; Config</text>
+
+  <!-- 3. Training Engines -> PEFT Storage (Save Adapter) -->
+  <path d="M 420 400 L 380 400 L 380 610 L 352 610" fill="none" stroke="#fbbf24" stroke-width="2" marker-end="url(#arrowAmber)" />
+  <text x="360" y="510" text-anchor="middle" font-size="10" font-weight="700" fill="#fbbf24" transform="rotate(-90 360 510)">Save LoRA Adapter</text>
+
+  <!-- 4. Training Engine <-> math-verify (Reward Verification) -->
+  <path d="M 714 350 L 816 350" fill="none" stroke="#34d399" stroke-width="2" stroke-dasharray="4,4" marker-end="url(#arrowGreen)" />
+  <text x="765" y="342" text-anchor="middle" font-size="10" font-weight="700" fill="#34d399">Reward Feedback</text>
+
+  <!-- 5. PEFT Adapter -> Evaluation Harness -->
+  <path d="M 350 670 L 770 670 L 770 470 L 816 470" fill="none" stroke="#34d399" stroke-width="2" marker-end="url(#arrowGreen)" />
+  <text x="580" y="662" text-anchor="middle" font-size="10" font-weight="700" fill="#34d399">Evaluate Candidate Checkpoint</text>
+
+  <!-- 6. Evaluation -> Lineage DAG & Optuna (Feedback Loop) -->
+  <path d="M 955 100 L 955 80 L 195 80 L 195 98" fill="none" stroke="#38bdf8" stroke-width="2.5" marker-end="url(#arrow)" />
+  <text x="575" y="74" text-anchor="middle" font-size="11" font-weight="700" fill="#38bdf8">Emit Metrics &#8594; Update Pareto Frontier &amp; DAG Lineage</text>
+
+</svg>

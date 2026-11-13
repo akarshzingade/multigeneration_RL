@@ -1,0 +1,139 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1150 620" width="100%" height="100%" style="background:#0f172a; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+  <defs>
+    <!-- Gradients -->
+    <linearGradient id="headerGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#818cf8"/>
+    </linearGradient>
+
+    <linearGradient id="sprint1Grad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0284c7"/>
+      <stop offset="100%" stop-color="#38bdf8"/>
+    </linearGradient>
+
+    <linearGradient id="sprint2Grad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#7c3aed"/>
+      <stop offset="100%" stop-color="#a78bfa"/>
+    </linearGradient>
+
+    <linearGradient id="sprint3Grad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#db2777"/>
+      <stop offset="100%" stop-color="#f472b6"/>
+    </linearGradient>
+
+    <linearGradient id="sprint4Grad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#d97706"/>
+      <stop offset="100%" stop-color="#fbbf24"/>
+    </linearGradient>
+
+    <linearGradient id="sprint5Grad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#059669"/>
+      <stop offset="100%" stop-color="#34d399"/>
+    </linearGradient>
+
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="115%" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+
+    <marker id="arrowHead" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#64748b" />
+    </marker>
+  </defs>
+
+  <!-- Title Header -->
+  <text x="575" y="42" text-anchor="middle" font-size="24" font-weight="800" fill="url(#headerGrad)" letter-spacing="0.5">MULTIGEN-RL: ACCELERATED IMPLEMENTATION ROADMAP</text>
+  <text x="575" y="66" text-anchor="middle" font-size="13" font-weight="400" fill="#94a3b8">Sprint Schedule, Core Milestones, and Testable Hypotheses Validation (H1 - H5)</text>
+
+  <!-- Timeline Grid Header -->
+  <rect x="50" y="90" width="1050" height="40" rx="8" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+  <text x="180" y="115" text-anchor="middle" font-size="12" font-weight="700" fill="#cbd5e1">Phase / Sprint</text>
+  <text x="420" y="115" text-anchor="middle" font-size="12" font-weight="700" fill="#94a3b8">Week 1 (Days 1 - 7)</text>
+  <text x="590" y="115" text-anchor="middle" font-size="12" font-weight="700" fill="#94a3b8">Week 2 (Days 8 - 14)</text>
+  <text x="760" y="115" text-anchor="middle" font-size="12" font-weight="700" fill="#94a3b8">Week 3 (Days 15 - 21)</text>
+  <text x="930" y="115" text-anchor="middle" font-size="12" font-weight="700" fill="#94a3b8">Week 4 - 5 (Days 22 - 34)</text>
+
+  <!-- Vertical Grid Lines -->
+  <line x1="330" y1="90" x2="330" y2="580" stroke="#1e293b" stroke-width="1.5" stroke-dasharray="4,4"/>
+  <line x1="505" y1="90" x2="505" y2="580" stroke="#1e293b" stroke-width="1.5" stroke-dasharray="4,4"/>
+  <line x1="675" y1="90" x2="675" y2="580" stroke="#1e293b" stroke-width="1.5" stroke-dasharray="4,4"/>
+  <line x1="845" y1="90" x2="845" y2="580" stroke="#1e293b" stroke-width="1.5" stroke-dasharray="4,4"/>
+  <line x1="1015" y1="90" x2="1015" y2="580" stroke="#1e293b" stroke-width="1.5" stroke-dasharray="4,4"/>
+
+  <!-- ==================== SPRINT 1 ==================== -->
+  <g filter="url(#shadow)">
+    <!-- Label -->
+    <rect x="50" y="145" width="260" height="68" rx="10" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+    <text x="68" y="172" font-size="13" font-weight="700" fill="#38bdf8">Sprint 1: Setup &amp; Wrappers</text>
+    <text x="68" y="193" font-size="11" fill="#94a3b8">Days 1 - 6 &#8226; Foundations</text>
+
+    <!-- Bar -->
+    <rect x="330" y="152" width="165" height="54" rx="8" fill="url(#sprint1Grad)"/>
+    <text x="412" y="176" text-anchor="middle" font-size="11" font-weight="700" fill="#ffffff">math-verify &amp; FLOPs Counter</text>
+    <text x="412" y="193" text-anchor="middle" font-size="10" fill="#e0f2fe">NetworkX Lineage DAG + GSM8K</text>
+  </g>
+
+  <!-- ==================== SPRINT 2 ==================== -->
+  <g filter="url(#shadow)">
+    <!-- Label -->
+    <rect x="50" y="230" width="260" height="68" rx="10" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+    <text x="68" y="257" font-size="13" font-weight="700" fill="#a78bfa">Sprint 2: Training Runners</text>
+    <text x="68" y="278" font-size="11" fill="#94a3b8">Days 7 - 14 &#8226; Engine Integration</text>
+
+    <!-- Bar -->
+    <rect x="498" y="237" width="170" height="54" rx="8" fill="url(#sprint2Grad)"/>
+    <text x="583" y="261" text-anchor="middle" font-size="11" font-weight="700" fill="#ffffff">trl.GRPOTrainer + vLLM</text>
+    <text x="583" y="278" text-anchor="middle" font-size="10" fill="#ede9fe">distill_runner &amp; mixed_runner</text>
+  </g>
+
+  <!-- ==================== SPRINT 3 ==================== -->
+  <g filter="url(#shadow)">
+    <!-- Label -->
+    <rect x="50" y="315" width="260" height="74" rx="10" fill="#1e293b" stroke="#db2777" stroke-width="1.2"/>
+    <text x="68" y="340" font-size="13" font-weight="700" fill="#f472b6">Sprint 3: Milestone 1 Benchmark</text>
+    <text x="68" y="360" font-size="11" fill="#cbd5e1">&#127919; Hypotheses: H1, H2, H3</text>
+    <text x="68" y="377" font-size="10" fill="#94a3b8">Days 15 - 21 &#8226; Fixed Compute</text>
+
+    <!-- Bar -->
+    <rect x="670" y="322" width="170" height="60" rx="8" fill="url(#sprint3Grad)"/>
+    <text x="755" y="346" text-anchor="middle" font-size="11" font-weight="800" fill="#ffffff">Core Benchmark Suite</text>
+    <text x="755" y="363" text-anchor="middle" font-size="10" fill="#fdf2f8">H1: RL vs KD vs Mixed (1e16 FLOPs)</text>
+    <text x="755" y="376" text-anchor="middle" font-size="9" fill="#fdf2f8">H2 Diversity + H3 Peer Distillation</text>
+  </g>
+
+  <!-- ==================== SPRINT 4 ==================== -->
+  <g filter="url(#shadow)">
+    <!-- Label -->
+    <rect x="50" y="405" width="260" height="74" rx="10" fill="#1e293b" stroke="#d97706" stroke-width="1.2"/>
+    <text x="68" y="430" font-size="13" font-weight="700" fill="#fbbf24">Sprint 4: Adaptive Controller</text>
+    <text x="68" y="450" font-size="11" fill="#cbd5e1">&#127919; Hypothesis: H4 (Adaptive)</text>
+    <text x="68" y="467" font-size="10" fill="#94a3b8">Days 22 - 29 &#8226; Optuna Pareto</text>
+
+    <!-- Bar -->
+    <rect x="842" y="412" width="140" height="60" rx="8" fill="url(#sprint4Grad)"/>
+    <text x="912" y="436" text-anchor="middle" font-size="11" font-weight="800" fill="#ffffff">Optuna Multi-Objective</text>
+    <text x="912" y="453" text-anchor="middle" font-size="10" fill="#fffbeb">Search vs Random / Greedy</text>
+    <text x="912" y="466" text-anchor="middle" font-size="9" fill="#fffbeb">Pareto Curve Area Metric</text>
+  </g>
+
+  <!-- ==================== SPRINT 5 ==================== -->
+  <g filter="url(#shadow)">
+    <!-- Label -->
+    <rect x="50" y="495" width="260" height="74" rx="10" fill="#1e293b" stroke="#059669" stroke-width="1.2"/>
+    <text x="68" y="520" font-size="13" font-weight="700" fill="#34d399">Sprint 5: Ecosystem &amp; Reporting</text>
+    <text x="68" y="540" font-size="11" fill="#cbd5e1">&#127919; Hypothesis: H5 (Ecosystem Value)</text>
+    <text x="68" y="557" font-size="10" fill="#94a3b8">Days 30 - 34 &#8226; Collective Intel</text>
+
+    <!-- Bar -->
+    <rect x="984" y="502" width="105" height="60" rx="8" fill="url(#sprint5Grad)"/>
+    <text x="1036" y="526" text-anchor="middle" font-size="11" font-weight="800" fill="#ffffff">Ensemble Eval</text>
+    <text x="1036" y="543" text-anchor="middle" font-size="10" fill="#ecfdf5">Majority Vote</text>
+    <text x="1036" y="556" text-anchor="middle" font-size="9" fill="#ecfdf5">Final Synthesis</text>
+  </g>
+
+  <!-- Flow Arrows connecting sprints -->
+  <path d="M 495 179 L 515 179 L 515 237" fill="none" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrowHead)"/>
+  <path d="M 668 264 L 685 264 L 685 322" fill="none" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrowHead)"/>
+  <path d="M 840 352 L 855 352 L 855 412" fill="none" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrowHead)"/>
+  <path d="M 982 442 L 995 442 L 995 502" fill="none" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrowHead)"/>
+
+</svg>

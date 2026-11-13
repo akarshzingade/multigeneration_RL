@@ -1,0 +1,19 @@
+# Core dependencies for multigen-rl
+torch>=2.1.0
+transformers>=4.40.0
+datasets>=2.18.0
+math-verify>=0.1.0
+pydantic>=2.0.0
+pyyaml>=6.0
+peft>=0.10.0
+trl>=0.8.0
+networkx>=3.0
+optuna>=3.5.0
+
+# Inference engine (Linux + CUDA GPUs)
+# Note: On macOS, inference falls back to transformers backend automatically.
+# Uncomment the line below on Linux/CUDA environments:
+# vllm>=0.4.0
+
+# Testing and development
+pytest>=8.0.0
