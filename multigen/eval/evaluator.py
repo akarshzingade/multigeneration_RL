@@ -11,7 +11,7 @@ import json
 import logging
 import time
 from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 from multigen.eval.rewards import (
     extract_answer,
@@ -252,6 +252,7 @@ class GSM8KEvaluator:
         temperature: float = 0.0,
         batch_size: int = 16,
         device: Optional[str] = None,
+        gpu_memory_utilization: float = 0.6,
     ):
         """Initialize the evaluator with model specifications and inference configurations.
 
@@ -263,6 +264,7 @@ class GSM8KEvaluator:
             temperature: Sampling temperature (0.0 for deterministic greedy decoding).
             batch_size: Batch size for HuggingFace transformers backend.
             device: Explicit device string ('cuda', 'mps', or 'cpu'). Auto-detected if None.
+            gpu_memory_utilization: Fraction of GPU memory for vLLM (default: 0.6 to avoid OOM after training).
         """
         self.model_name_or_path = model_name_or_path
         self.adapter_path = adapter_path
@@ -271,6 +273,7 @@ class GSM8KEvaluator:
         self.temperature = temperature
         self.batch_size = batch_size
         self.device = device or self._detect_device()
+        self.gpu_memory_utilization = gpu_memory_utilization
 
         # Initialize the selected inference engine
         self._init_backend()
@@ -297,11 +300,16 @@ class GSM8KEvaluator:
                 from vllm import LLM, SamplingParams
 
                 logger.info("Initializing vLLM engine for %s", self.model_name_or_path)
-                self.llm = LLM(
-                    model=self.model_name_or_path,
-                    trust_remote_code=True,
-                    max_model_len=2048,
-                )
+                llm_kwargs = {
+                    "model": self.model_name_or_path,
+                    "trust_remote_code": True,
+                    "max_model_len": 2048,
+                    "gpu_memory_utilization": self.gpu_memory_utilization,
+                }
+                if self.adapter_path:
+                    llm_kwargs["enable_lora"] = True
+                    llm_kwargs["max_lora_rank"] = 64
+                self.llm = LLM(**llm_kwargs)
                 self.sampling_params = SamplingParams(
                     temperature=self.temperature,
                     max_tokens=self.max_tokens,
@@ -361,7 +369,17 @@ class GSM8KEvaluator:
         """
         # Generation via vLLM
         if self.backend == "vllm":
-            outputs = self.llm.generate(prompts, self.sampling_params, use_tqdm=False)
+            lora_request = None
+            if self.adapter_path:
+                try:
+                    from vllm.lora.request import LoRARequest
+                    lora_request = LoRARequest("grpo_adapter", 1, self.adapter_path)
+                except Exception:
+                    pass
+            gen_kwargs = {"use_tqdm": False}
+            if lora_request is not None:
+                gen_kwargs["lora_request"] = lora_request
+            outputs = self.llm.generate(prompts, self.sampling_params, **gen_kwargs)
             completions = [out.outputs[0].text for out in outputs]
             token_counts = [len(out.outputs[0].token_ids) for out in outputs]
             return completions, token_counts
@@ -413,15 +431,16 @@ class GSM8KEvaluator:
 
     def evaluate(
         self,
-        dataset: List[Dict[str, str]],
+        dataset: Optional[Union[List[Dict[str, str]], str]] = None,
         split_name: str = "test",
         num_shots: int = 0,
         record_details: bool = True,
+        **kwargs: Any,
     ) -> BaselineEvalResult:
         """Run complete evaluation over dataset problems and compute verification metrics.
 
         Args:
-            dataset: List of problem dicts with 'question' and 'gold_answer'.
+            dataset: Optional list of problem dicts or split name string ('dev'/'test').
             split_name: Name of evaluated split (e.g. 'dev' or 'test').
             num_shots: Few-shot count (0 or 4).
             record_details: If True, records per-problem inputs, outputs, and scores.
@@ -429,6 +448,19 @@ class GSM8KEvaluator:
         Returns:
             Populated BaselineEvalResult dataclass containing aggregate scores and diagnostics.
         """
+        # Support split keyword argument alias
+        if "split" in kwargs and kwargs["split"]:
+            split_name = kwargs["split"]
+
+        # Support passing split name directly as dataset argument or defaulting to test
+        if dataset is None or isinstance(dataset, str):
+            if isinstance(dataset, str):
+                split_name = dataset
+            import datasets as hf_datasets
+            raw = hf_datasets.load_dataset("openai/gsm8k", "main")
+            splits = split_gsm8k_dataset(raw)
+            dataset = splits.get(split_name, splits["test"])
+
         # Format prompts and collect gold answers
         prompts = [format_gsm8k_prompt(item["question"], num_shots=num_shots) for item in dataset]
         gold_answers = [item["gold_answer"] for item in dataset]

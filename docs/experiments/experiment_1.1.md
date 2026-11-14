@@ -1,7 +1,7 @@
 # Experiment 1.1: Standalone Reinforcement Learning (GRPO) Baseline (`EXP-1.1`)
 
 - **Sequential Position:** Step 2 (Phase 1: Foundational Baselines & Mixed Learning)
-- **Status:** Specification (Pre-Implementation)
+- **Status:** Implemented (Unit Tests Passing)
 - **Parent Plans:** [Sequential Experiment Plan](../experiment_plan.md) | [Implementation Plan](../implementaiton_plan.md)
 - **Preceding Dependencies:** [Experiment 0.1: Verifier Calibration & Baseline Zero-Shot Evaluation](experiment_0.1.md) (`EXP-0.1`), [Experiment 0.2: Compute Accounting & FLOPs Normalization Calibration](experiment_0.2.md) (`EXP-0.2`)
 - **Default Model:** `Qwen/Qwen3-0.6B`

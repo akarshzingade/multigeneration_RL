@@ -90,6 +90,32 @@ class TestEvaluatorPromptsAndSplits(unittest.TestCase):
         loaded = json.loads(raw_json)
         self.assertEqual(loaded["model_name"], "Qwen/Qwen3-0.6B")
 
+    def test_evaluator_evaluate_signature_and_fallback(self):
+        from unittest.mock import MagicMock, patch
+        from multigen.eval.evaluator import GSM8KEvaluator
+
+        with patch.object(GSM8KEvaluator, "_init_backend", return_value=None):
+            evaluator = GSM8KEvaluator(
+                model_name_or_path="Qwen/Qwen3-0.6B",
+                backend="transformers",
+            )
+            evaluator.generate_batch = MagicMock(return_value=(
+                ["<think>10+5=15</think><answer>15</answer>"],
+                [10],
+            ))
+
+            test_data = [{"question": "What is 10 + 5?", "gold_answer": "15"}]
+
+            # 1. Test evaluate with explicit dataset and split_name
+            res1 = evaluator.evaluate(dataset=test_data, split_name="test")
+            self.assertEqual(res1.accuracy, 1.0)
+            self.assertEqual(res1.format_compliance_rate, 1.0)
+
+            # 2. Test evaluate with 'split' keyword alias
+            res2 = evaluator.evaluate(dataset=test_data, split="dev")
+            self.assertEqual(res2.split, "dev")
+            self.assertEqual(res2.accuracy, 1.0)
+
 
 if __name__ == "__main__":
     unittest.main()
