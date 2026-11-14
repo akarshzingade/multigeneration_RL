@@ -10,9 +10,17 @@ from __future__ import annotations
 
 import argparse
 import logging
+import multiprocessing
 import os
 import sys
 from pathlib import Path
+
+# Ensure multiprocessing uses 'spawn' and vLLM uses spawn before any CUDA operations
+os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
+try:
+    multiprocessing.set_start_method("spawn", force=True)
+except RuntimeError:
+    pass
 
 # ==============================================================================
 # Path Setup: Ensure project root is in sys.path for direct script invocation

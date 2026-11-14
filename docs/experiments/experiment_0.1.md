@@ -178,9 +178,14 @@ Write deterministic `pytest` unit tests covering:
 # 1. Run verifier unit tests (must be 100% pass)
 pytest tests/test_rewards.py -v
 
-# 2. Run 0-shot and 4-shot baseline evaluations
+# 2. Run 0-shot and 4-shot baseline evaluations locally
 python scripts/evaluate_baseline.py --model Qwen/Qwen3-0.6B --split test --num-shots 0 --output evals/exp0_1_baseline_0shot.json
 python scripts/evaluate_baseline.py --model Qwen/Qwen3-0.6B --split test --num-shots 4 --output evals/exp0_1_baseline_4shot.json
+
+# 3. Or run on Modal cloud GPU (Nvidia L4/A10G with vLLM)
+modal run scripts/modal_baseline_eval_runner.py --limit 10       # Dry-run
+modal run scripts/modal_baseline_eval_runner.py --run-both-shots # Full 0-shot & 4-shot
+modal volume get multigen-storage evals/ ./evals/               # Download artifacts
 ```
 
 ### Decision Gate (Pass Criteria)

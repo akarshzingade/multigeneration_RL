@@ -272,8 +272,9 @@ class GSM8KEvaluator:
         self.max_tokens = max_tokens
         self.temperature = temperature
         self.batch_size = batch_size
-        self.device = device or self._detect_device()
         self.gpu_memory_utilization = gpu_memory_utilization
+        # Defer or bypass CUDA device detection for vLLM to prevent premature CUDA init in parent process
+        self.device = device or ("cuda" if backend == "vllm" else self._detect_device())
 
         # Initialize the selected inference engine
         self._init_backend()
@@ -297,6 +298,16 @@ class GSM8KEvaluator:
         # Primary backend: vLLM (high throughput on Linux/CUDA)
         if self.backend == "vllm":
             try:
+                import os
+                import multiprocessing
+
+                # Ensure spawn start method to prevent "Cannot re-initialize CUDA in forked subprocess"
+                os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
+                try:
+                    multiprocessing.set_start_method("spawn", force=True)
+                except RuntimeError:
+                    pass
+
                 from vllm import LLM, SamplingParams
 
                 logger.info("Initializing vLLM engine for %s", self.model_name_or_path)
@@ -320,6 +331,8 @@ class GSM8KEvaluator:
                     "Failed to initialize vLLM (%s). Falling back to transformers backend.", e
                 )
                 self.backend = "transformers"
+                if self.device is None:
+                    self.device = self._detect_device()
 
         # Fallback backend: HuggingFace Transformers (portable across Linux, macOS MPS, CPU)
         if self.backend == "transformers":
@@ -333,6 +346,8 @@ class GSM8KEvaluator:
             self.tokenizer = AutoTokenizer.from_pretrained(
                 self.model_name_or_path, trust_remote_code=True
             )
+            # Decoder-only models require left padding for batched autoregressive generation
+            self.tokenizer.padding_side = "left"
             # Ensure pad token is defined for batch generation
             if self.tokenizer.pad_token is None:
                 self.tokenizer.pad_token = self.tokenizer.eos_token
@@ -341,11 +356,18 @@ class GSM8KEvaluator:
 
             # Use half-precision float16 on accelerators, full precision on CPU
             dtype = torch.float16 if self.device in ("cuda", "mps") else torch.float32
-            self.model = AutoModelForCausalLM.from_pretrained(
-                self.model_name_or_path,
-                trust_remote_code=True,
-                torch_dtype=dtype,
-            )
+            try:
+                self.model = AutoModelForCausalLM.from_pretrained(
+                    self.model_name_or_path,
+                    trust_remote_code=True,
+                    dtype=dtype,
+                )
+            except TypeError:
+                self.model = AutoModelForCausalLM.from_pretrained(
+                    self.model_name_or_path,
+                    trust_remote_code=True,
+                    torch_dtype=dtype,
+                )
 
             # Optionally attach trained LoRA adapter (used in Phase 1+ checkpoints)
             if self.adapter_path:
