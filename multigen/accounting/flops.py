@@ -252,3 +252,55 @@ def compute_grpo_step_flops(
         "train_flops": train_flops,
         "total_flops": total_flops,
     }
+
+
+def compute_sft_step_flops(
+    student_params: int,
+    batch_seq_lengths: Sequence[int],
+    is_lora: bool = True,
+    student_trainable_params: Optional[int] = None,
+) -> float:
+    """Compute total FLOPs consumed in a single SFT training step across a batch.
+
+    Formula per token:
+      - Full fine-tuning: 6 * N_student * T
+      - LoRA fine-tuning: 4 * N_base * T + 6 * N_lora * T
+    """
+    total = 0.0
+    for seq_len in batch_seq_lengths:
+        total += compute_train_step_flops(
+            num_params=student_params,
+            seq_len=seq_len,
+            is_lora=is_lora,
+            trainable_params=student_trainable_params,
+        )
+    return total
+
+
+def compute_distillation_budget_split(
+    target_budget_flops: float = 1.0e16,
+    teacher_ratio: float = 0.20,
+    accounting_mode: str = "amortized",
+) -> Dict[str, float]:
+    """Compute budget allocation for teacher generation vs student SFT.
+
+    In 'amortized' mode:
+      - student_budget = target_budget_flops (1.0e16)
+      - teacher_budget is tracked as offline curation compute.
+    In 'strict_split' mode:
+      - teacher_budget = teacher_ratio * target_budget_flops
+      - student_budget = (1.0 - teacher_ratio) * target_budget_flops
+    """
+    if accounting_mode == "strict_split":
+        teacher_budget = target_budget_flops * teacher_ratio
+        student_budget = target_budget_flops - teacher_budget
+    else:
+        teacher_budget = target_budget_flops * teacher_ratio
+        student_budget = target_budget_flops
+
+    return {
+        "target_budget_flops": target_budget_flops,
+        "accounting_mode": accounting_mode,
+        "teacher_budget_flops": teacher_budget,
+        "student_budget_flops": student_budget,
+    }

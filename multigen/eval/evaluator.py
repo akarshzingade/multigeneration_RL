@@ -303,6 +303,7 @@ class GSM8KEvaluator:
 
                 # Ensure spawn start method to prevent "Cannot re-initialize CUDA in forked subprocess"
                 os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
+                os.environ["VLLM_USE_V1"] = "0"
                 try:
                     multiprocessing.set_start_method("spawn", force=True)
                 except RuntimeError:

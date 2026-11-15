@@ -1,0 +1,63 @@
+# ==============================================================================
+# Configuration: Experiment 1.2 - Standalone Knowledge Distillation (KD) Baseline
+# ==============================================================================
+# Distillation baseline established under strict compute parity (1.0e16 FLOPs)
+# on Qwen/Qwen3-0.6B using Qwen/Qwen2.5-Math-7B-Instruct as teacher.
+
+experiment_id: "exp1_2_distill_baseline"
+description: "Phase 1 Standalone Knowledge Distillation (KD) Baseline under 1.0e16 FLOPs"
+
+model:
+  name_or_path: "Qwen/Qwen3-0.6B"
+  torch_dtype: "bfloat16"
+
+teacher:
+  name_or_path: "Qwen/Qwen2.5-Math-7B-Instruct"
+  torch_dtype: "bfloat16"
+  k_samples: 4
+  temperature: 0.7
+  max_new_tokens: 512
+  traces_path: "data/teacher_traces_gsm8k.jsonl"
+
+peft:
+  type: "lora"
+  rank: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+
+sft:
+  learning_rate: 2.0e-4
+  batch_size: 8
+  gradient_accumulation_steps: 2
+  weight_decay: 0.01
+  warmup_ratio: 0.05
+  max_seq_length: 1024
+  response_template: "<think>"
+
+budget:
+  target_flops: 1.0e16
+  accounting_mode: "amortized" # or "strict_split"
+  intermediate_eval_interval_flops: 2.0e15
+
+dataset:
+  name: "openai/gsm8k"
+  subset: "main"
+  num_shots: 0
+
+output:
+  checkpoints_dir: "checkpoints/exp1_2_distill"
+  dag_path: "population_dag.json"
+  eval_output_dir: "evals"
+
+seeds:
+  - 42
+  - 43
+  - 44

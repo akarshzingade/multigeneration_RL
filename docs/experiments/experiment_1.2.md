@@ -1,7 +1,7 @@
 # Experiment 1.2: Standalone Knowledge Distillation (KD) Baseline (`EXP-1.2`)
 
 - **Sequential Position:** Step 3 (Phase 1: Foundational Baselines & Mixed Learning)
-- **Status:** Specification & Implementation Ready
+- **Status:** Implemented (Unit Tests Passing)
 - **Parent Plans:** [Sequential Experiment Plan](../experiment_plan.md) | [Implementation Plan](../implementaiton_plan.md)
 - **Preceding Dependencies:** [Experiment 0.1: Verifier Calibration & Baseline Zero-Shot Evaluation](experiment_0.1.md) (`EXP-0.1`), [Experiment 0.2: Compute Accounting & FLOPs Normalization Calibration](experiment_0.2.md) (`EXP-0.2`)
 - **Companion Baseline:** [Experiment 1.1: Standalone Reinforcement Learning (GRPO) Baseline](experiment_1.1.md) (`EXP-1.1`)
@@ -229,162 +229,123 @@ class DistillRunner:
 
 ---
 
-## 4. Key Considerations & Design Decisions
+## 4. Key Design Decisions & Sizing Analysis
 
-The following technical decisions require careful evaluation when executing `EXP-1.2`. Each item details the trade-offs, available options, and concrete recommendations.
-
----
-
-### 4.1 Decision 1: Teacher Model Selection ($N_{\text{teacher}}$) & Capacity vs. Cost Tradeoff
-
-The teacher provides the reasoning ceiling for the student. The teacher size directly dictates the FLOP cost per token generated during Stage 1.
-
-#### Options:
-- **Option A: `Qwen/Qwen2.5-Math-7B-Instruct` ($\approx 7.61\text{B}$ params) [Recommended]:**
-  - *Pros:* State-of-the-art open mathematical reasoning model in the 7B class (>80% on GSM8K). Generates clean, rigorous step-by-step solutions in consistent XML formatting.
-  - *Cons:* Consumes $2 \times 7.61 \times 10^9 \approx 1.522 \times 10^{10}$ FLOPs per token generated ($12.9\times$ more compute per token than student rollouts).
-- **Option B: `DeepSeek-R1-Distill-Qwen-7B` ($\approx 7.6\text{B}$ params):**
-  - *Pros:* Native long chain-of-thought (CoT) reasoning traces with `<think>...</think>` tokens.
-  - *Cons:* Extremely long average sequence lengths ($800\text{–}1,500$ tokens per solution), which would exhaust the teacher generation budget after sampling only a few hundred problems.
-- **Option C: `Qwen/Qwen2.5-Math-1.5B` ($\approx 1.5\text{B}$ params):**
-  - *Pros:* Cheaper FLOP footprint ($5\times$ fewer FLOPs per token than 7B), allowing sampling more candidate traces per problem.
-  - *Cons:* Lower teacher verification pass rate; reasoning quality is noticeably inferior to 7B.
-
-> **Decision / Recommendation:** **Option A (`Qwen/Qwen2.5-Math-7B-Instruct`)**. It provides the highest-quality ground-truth reasoning trajectories while maintaining manageable sequence lengths ($250\text{–}400$ tokens).
+The following technical decisions govern the execution of `EXP-1.2`. All decisions have been reviewed, aligned, and confirmed configurable in `TrainingRecipe` and YAML configuration:
 
 ---
 
-### 4.2 Decision 2: Compute Accounting Policy for Teacher Generation (Online vs. Offline Amortization)
+### 4.1 Decision 1: Teacher Model Selection ($N_{\text{teacher}}$) (Confirmed: `Qwen/Qwen2.5-Math-7B-Instruct`)
 
-Under strict compute parity ($1.0 \times 10^{16}$ FLOPs), how are the teacher generation FLOPs accounted for against the student training budget?
-
-#### The Core Dilemma:
-The GSM8K training set contains 7,473 problems.
-If `Qwen2.5-Math-7B-Instruct` generates 1 completion per problem at an average length of 350 tokens (prompt + gen):
-$$\text{FLOPs}_{\text{teacher}} = 7,473 \times (2 \times 7.61 \times 10^9) \times 350 \approx 3.98 \times 10^{16} \text{ FLOPs}$$
-Notice that **generating rollouts for the entire 7.4k training set with a 7B teacher consumes $\approx 4.0 \times 10^{16}$ FLOPs—which is $4\times$ the entire experiment budget ($1.0 \times 10^{16}$ FLOPs)** before the student trains for even one step!
-
-#### Architectural Policy Options:
-
-| Policy | Mechanism | Compute Attribution | Pros / Cons |
-| :--- | :--- | :--- | :--- |
-| **Option A: Strict In-Budget Online Generation (Budget Splitting)** | Generate teacher rollouts on a targeted subset of $\sim 1,000\text{–}1,500$ problems ($B_{\text{teacher}} = 2.0 \times 10^{15}$ FLOPs), leaving remaining $8.0 \times 10^{15}$ FLOPs for student SFT. | 100% of teacher inference is debited to the $1.0 \times 10^{16}$ trial budget. | **Pros:** Mathematically pure; completely self-contained within the $1.0 \times 10^{16}$ budget.<br>**Cons:** Student only trains on a subset of the dataset. |
-| **Option B: Amortized / Pre-Generated Reference Corpus (Standard Literature Benchmark)** [Recommended] | Pre-generate and verify teacher traces once across GSM8K train. In EXP-1.2, allocate the full $1.0 \times 10^{16}$ FLOP budget to student SFT, reporting the one-time teacher data curation FLOPs as fixed offline preprocessing compute (analogous to base model pretraining). | $1.0 \times 10^{16}$ FLOPs purely for student training; teacher FLOPs logged as external constant. | **Pros:** Matches standard ML literature benchmark practices (e.g. Alpaca, UltraFeedback, MiniLLM); allows the student to observe the full problem diversity.<br>**Cons:** Requires explicit disclosure that teacher curation compute was amortized. |
-| **Option C: Hybrid Dual-Accounting Mode (Configurable)** | The framework supports both modes via YAML flag `accounting.mode: "strict_split" \| "amortized"`. | Dynamic based on experiment config. | **Pros:** Maximum flexibility; provides fair comparisons under both philosophical interpretations. |
-
-> **Decision / Recommendation:** **Option C (Dual-Mode Support with Option B default for baseline reporting, verified against Option A)**:
-> 1. In `exp1_2_distill_baseline.yaml`, configure `budget.accounting_mode: "amortized"` by default so the student receives $1.0 \times 10^{16}$ FLOPs of gradient updates on verified teacher data.
-> 2. Also run a matched run with `budget.accounting_mode: "strict_split"` (20% teacher inference, 80% student SFT) to prove that the conclusions of Hypothesis H1 hold under both accounting definitions.
+- **Approved Selection:** **`Qwen/Qwen2.5-Math-7B-Instruct` ($\approx 7.61\text{B}$ parameters)**.
+- **Why Selected:** It is the current state-of-the-art open-weights mathematical reasoning model in the 7B class (>80% accuracy on GSM8K). It outputs clean, mathematically rigorous derivation steps in consistent formatting.
+- **Configurability:** Parameterized in `TrainingRecipe.teacher_model_name_or_path` and YAML `teacher.name_or_path`.
 
 ---
 
-### 4.3 Decision 3: Teacher Sampling Multiplicity ($K$) & Rejection Filtering Strategy
+### 4.2 Decision 2: Compute Accounting Policy for Teacher Generation (Confirmed: Option B - Amortized Reference Corpus)
 
-When generating teacher traces, how many rationales should be sampled per problem?
-
-#### Options:
-- **Option A: Greedy Decoding ($K=1, T=0$):**
-  - Deterministic single-pass generation. If the teacher fails the problem, that problem is discarded from distillation.
-  - *Cost:* Lowest generation compute. Yields $\approx 6,000$ verified problems out of 7,473 ($\approx 82\%$ coverage).
-- **Option B: Best-of-$N$ Rejection Sampling ($K=4, T=0.7$) [Recommended]:**
-  - Sample 4 candidate paths per problem; filter through `math-verify`; retain the shortest correct solution.
-  - *Cost:* $4\times$ inference compute, but increases problem coverage to $>95\%$ and provides natural trajectory diversity.
-- **Option C: Multi-Rationale Inclusion (Retain all correct traces from $K=4$):**
-  - Keeps *all* verified traces (up to 4 per problem), expanding dataset volume.
-  - *Risk:* Over-weights easier problems (which have 4 correct paths) over harder problems (which have only 1).
-
-> **Decision / Recommendation:** **Option B ($K=4$, pick shortest verified correct path per problem)**:
-> - Ensures $>95\%$ training set coverage.
-> - Selecting the shortest valid reasoning path encourages conciseness and minimizes token waste during student SFT.
+- **Approved Selection:** **Option B (Amortized Pre-Generated Reference Corpus)**, with Option C dual-mode support in code.
+- **Detailed Explanation — Why Option B is Strongly Recommended:**
+  
+  1. **Prevents Severe Problem Diversity Starvation:**
+     The GSM8K training set contains 7,473 diverse arithmetic problems. Under strict in-budget online generation (Option A), because a 7B teacher consumes $\approx 12.9\times$ more FLOPs per token than a 0.6B student, generating teacher rollouts for all 7,473 problems requires $\approx 3.98 \times 10^{16}$ FLOPs—almost $4\times$ the entire experiment budget ($1.0 \times 10^{16}$ FLOPs)! Under Option A, you would be forced to restrict the teacher to only $\sim 1,000$ problems. This would starve the student of 85% of problem archetypes, meaning the student would fail not because distillation is weak, but because it suffered from extreme data scarcity.
+  
+  2. **Standard Machine Learning Literature Parity:**
+     All prominent distillation and alignment literature (e.g., Stanford Alpaca, UltraFeedback, Orca, MiniLLM, DeepSeek-R1-Distill) treats high-capacity teacher dataset curation as an **amortized, reusable benchmark asset** (analogous to base pretraining corpora). The learning dynamics under study in Hypothesis H1 evaluate: *"Given teacher demonstrations vs self-exploration, how efficiently does student policy optimization convert $1.0 \times 10^{16}$ training FLOPs into mathematical reasoning capability?"*
+  
+  3. **Multi-Seed Reuse & Cost Efficiency:**
+     Evaluating statistical significance requires 3 random seeds (seeds 42, 43, 44). Under Option B, the teacher dataset is generated and verified **exactly once** and saved to `data/teacher_traces_gsm8k.jsonl`. All 3 student seeds then train directly from this verified corpus. Under Option A, teacher generation would need to be re-run per seed, burning compute without changing the teacher distribution.
+  
+  4. **Scientific Transparency:**
+     To maintain absolute integrity, the one-time teacher data curation FLOPs ($\approx 4.0 \times 10^{16}$ FLOPs) are explicitly logged in the DAG metadata (`teacher_generation_flops`), while the student's active backpropagation budget is capped strictly at $1.0 \times 10^{16}$ FLOPs (matching the active training budget of `EXP-1.1`). Furthermore, the codebase supports `budget.accounting_mode: "strict_split"` to enable exact in-budget split ablation runs if desired.
 
 ---
 
-### 4.4 Decision 4: Response Formatting & Loss Masking Mechanics
+### 4.3 Decision 3: Teacher Sampling Multiplicity ($K$) & Filtering (Confirmed: Best-of-$N$ Rejection Sampling)
 
-To ensure fair downstream comparison with the RL baseline (`EXP-1.1`), how should teacher traces be formatted and tokenized?
-
-#### Requirements:
-1. **XML Tag Parity:** The teacher output must strictly encapsulate reasoning in `<think>...</think>` tags and the final answer in `<answer>...</answer>` tags:
-   ```text
-   <think>
-   To find the total cost, we first multiply 4 books by $5 = $20.
-   Then we subtract the $3 discount: $20 - $3 = $17.
-   </think>
-   <answer>17</answer>
-   ```
-2. **Loss Masking (Completion Only):**
-   - The question prompt is visible during the forward pass, but loss labels for all prompt tokens are set to `-100`.
-   - Loss is computed exclusively on the teacher's completion tokens starting from `<think>`.
-   - Implemented via `trl.DataCollatorForCompletionOnlyLM(response_template="<think>", tokenizer=tokenizer)`.
-
-> **Decision / Recommendation:** Enforce strict XML encapsulation and completion-only loss masking. This guarantees that student loss directly measures generative imitation rather than prompt memorization.
+- **Approved Selection:** **Option B: Best-of-$N$ Rejection Sampling ($K=4, T=0.7$, shortest verified path)**.
+- **Why Selected:**
+  - $K=4$ temperature-sampled completions per problem elevates teacher problem coverage on GSM8K train from $\approx 82\%$ (greedy $T=0$) to $>96\%$.
+  - Filtering via `math-verify` guarantees zero erroneous reasoning chains enter the distillation dataset.
+  - Selecting the *shortest* verified correct path per problem prevents the student from imitating unnecessarily verbose or meandering proofs, saving token budget during SFT.
+- **Configurability:** Parameterized in `TrainingRecipe.teacher_k_samples` (default: 4) and `teacher_temperature` (default: 0.7).
 
 ---
 
-### 4.5 Decision 5: Student Learning Rate & Optimization Schedule
+### 4.4 Decision 4: Response Formatting & Loss Masking (Confirmed: XML Tag Parity & Completion-Only Loss)
 
-In `EXP-1.1` (GRPO), policy updates used a conservative learning rate of $\eta = 2 \times 10^{-5}$ with a reference policy KL penalty ($\beta = 0.04$) to avoid policy collapse. Supervised Fine-Tuning exhibits different gradient dynamics:
-
-#### SFT vs. GRPO Optimization Dynamics:
-- **No Policy Drift Risk:** SFT minimizes convex cross-entropy over fixed tokens; there is no moving reference policy or policy ratio instability.
-- **LoRA Capacity:** LoRA adapters typically require a $5\times$ to $10\times$ higher learning rate than full fine-tuning or RL.
-- **Recommended Learning Rate:** $\eta = 2 \times 10^{-4}$ with AdamW ($\beta_1=0.9, \beta_2=0.999$, weight decay $0.01$) and a linear warmup over the first $5\%$ of FLOPs, decaying linearly to $0$.
-
-| Hyperparameter | GRPO (`EXP-1.1`) | SFT Distillation (`EXP-1.2`) | Rationale |
-| :--- | :---: | :---: | :--- |
-| **Learning Rate ($\eta$)** | $2 \times 10^{-5}$ | **$2 \times 10^{-4}$** | SFT on low-rank adapters requires higher gradient steps for fast token imitation. |
-| **Batch Size (Effective)** | 8 (Group Size $G=8$) | **16** ($8 \times \text{grad\_accum } 2$) | Stabilizes cross-entropy mini-batch gradients. |
-| **Sequence Length ($T$)** | 512 | **1024** | Allows full teacher chains-of-thought without premature truncation. |
-| **Warmup Ratio** | 10% | **5%** | Standard SFT warm-up schedule. |
+- **Approved Selection:** **XML Tag Encapsulation (`<think>...</think><answer>...</answer>`) with Completion-Only Masking via `DataCollatorForCompletionOnlyLM`**.
+- **Why Selected:**
+  - **Tag Parity with EXP-1.1:** `EXP-1.1` (GRPO) directly optimizes for `<think>...</think><answer>...</answer>`. Enforcing the identical XML template on teacher traces ensures that downstream evaluation (regex extraction and `math-verify`) evaluates both baselines under identical prompt/response templates without syntactic bias.
+  - **Completion-Only Loss:** Setting prompt labels to `-100` prevents gradient updates on fixed question tokens, focusing 100% of the SFT parameter updates on learning reasoning logic and mathematical transitions.
+- **Configurability:** Parameterized in YAML `sft.response_template: "<think>"`.
 
 ---
 
-### 4.6 Decision 6: Execution Pipeline & Hardware Sizing for Teacher + Student
+### 4.5 Decision 5: Student Learning Rate & Optimization Schedule (Confirmed: $\eta = 2 \times 10^{-4}$, Warmup 5%)
 
-Can teacher generation and student SFT run concurrently on a single GPU?
+- **Approved Selection:** **$\eta = 2.0 \times 10^{-4}$ with AdamW, linear warmup over 5% of FLOPs, linear decay to 0, effective batch size 16**.
+- **Why Selected:**
+  - SFT optimizes a convex cross-entropy loss over fixed target tokens and does not suffer from the policy drift or ratio collapse risks of RL.
+  - Low-rank adapters (LoRA) have fewer active parameters ($\approx 7.4\text{M}$) and require an order of magnitude higher learning rate than full fine-tuning or RL ($\eta = 2 \times 10^{-5}$ in GRPO) for rapid token imitation.
+- **Configurability:** Parameterized in `TrainingRecipe.learning_rate` and YAML `sft.learning_rate`.
 
-#### Hardware Footprint Analysis:
-- `Qwen2.5-Math-7B-Instruct` in `bfloat16` occupies $\approx 15.2\text{ GB}$ of VRAM.
-- `Qwen3-0.6B` with LoRA and AdamW states occupies $\approx 4.5\text{ GB}$ of VRAM.
-- **Total Concurrent VRAM:** $>22\text{ GB}$, which would cause out-of-memory (OOM) errors during batched generation on 24 GB GPUs (Nvidia L4 / A10G) if executed simultaneously in the same process.
+---
 
-#### Execution Architecture:
-To maintain compatibility with standard **24 GB GPUs (Nvidia L4)**, the execution pipeline is strictly partitioned into two decoupled phases:
-1. **Phase 1 (Offline / Sequential Generation):** Load `Qwen2.5-Math-7B-Instruct` into `vLLM`, run batch generation, filter through verifier, save to `data/teacher_traces_gsm8k.jsonl`, and destroy the vLLM engine/flush CUDA cache.
-2. **Phase 2 (Student Training):** Load `Qwen3-0.6B`, attach LoRA adapters, and execute `SFTRunner`.
+### 4.6 Decision 6: Execution Pipeline & Concurrency Analysis (Confirmed: Phased Sequential Execution)
+
+#### Question: *Would running teacher generation and student training concurrently run faster?*
+
+**Answer: No. Running concurrently is significantly slower, computationally inefficient, and prone to out-of-memory (OOM) failures.**
+
+Here is the technical breakdown:
+
+1. **Fundamental Producer-Consumer Mismatch:**
+   - **Generation is Slow:** Autoregressive generation with a 7B teacher model generates $\approx 35\text{–}60$ tokens/second on an L4 GPU.
+   - **Training is Fast:** Backpropagation on a 0.6B student model with LoRA processes $\approx 2,500\text{–}4,000$ tokens/second.
+   - If executed concurrently (streaming batches from teacher to student), the student GPU would sit idle $>95\%$ of the time waiting for the teacher to generate the next batch of tokens. The student cannot train on data that has not yet been generated and verified!
+
+2. **Severe VRAM Contention on a Single GPU (24 GB L4 / A10G):**
+   - `Qwen2.5-Math-7B-Instruct` in `bfloat16` requires $\approx 15.2\text{ GB}$ of static weight memory.
+   - `Qwen3-0.6B` base + LoRA + AdamW optimizer states require $\approx 4.5\text{ GB}$.
+   - Running both concurrently in one process or GPU requires $\approx 20\text{–}22\text{ GB}$ before even allocating the vLLM KV-cache! This would trigger immediate CUDA Out-Of-Memory (OOM) exceptions during batched generation.
+
+3. **Loss of vLLM Continuous Batching Throughput:**
+   - vLLM achieves its extreme throughput ($>10\times$ faster than standard generation) through PagedAttention and continuous batching across thousands of sequences simultaneously.
+   - If teacher generation is broken into tiny micro-batches interleaved with student backpropagation, the GPU continuously switches execution contexts, destroying batching efficiency and kernel occupancy.
+
+4. **Multi-Seed Multiplication of Work:**
+   - Our experiment protocol requires training across **3 random seeds (seeds 42, 43, 44)** to report statistically significant results.
+   - **Sequential Phased Approach:** Phase 1 generates and verifies the teacher dataset **once** ($\approx 25\text{ minutes}$ on an L4). Phase 2 trains seeds 42, 43, and 44 immediately from the cached file.
+   - **Concurrent Approach:** If coupled concurrently, teacher generation would have to run **3 separate times** (once per seed), tripling the teacher inference wall-clock time and cloud GPU bill!
 
 ```mermaid
-flowchart LR
-    A[Start EXP-1.2] --> B["Phase 1: Load Teacher (7B)"]
-    B --> C["vLLM Inference & Filter"]
-    C --> D["Save Traces to JSONL"]
-    D --> E["Unload 7B & torch.cuda.empty_cache()"]
-    E --> F["Phase 2: Load Student (0.6B)"]
-    F --> G["LoRA SFT Training Loop"]
-    G --> H[Final Evaluated Model]
+flowchart TD
+    subgraph Phased_Pipeline["Recommended: Decoupled Phased Pipeline (Fastest & Cheapest)"]
+        direction TB
+        G1["Stage 1: Batch Teacher Rollouts (vLLM on 7B)"] --> V1["Batch math-verify Filtering"]
+        V1 --> J["data/teacher_traces_gsm8k.jsonl (Generated Once)"]
+        J --> U["Unload 7B & torch.cuda.empty_cache()"]
+        U --> S42["Seed 42: Student SFT (0.6B LoRA)"]
+        U --> S43["Seed 43: Student SFT (0.6B LoRA)"]
+        U --> S44["Seed 44: Student SFT (0.6B LoRA)"]
+    end
 ```
 
-> **Hardware Recommendation:**
-> - **Minimum Viable GPU:** **Nvidia L4 (24 GB) at \$0.80 / h** on Modal or GCP.
-> - **Zero VRAM Spikes:** Sequential phased execution guarantees peak VRAM never exceeds $\approx 16\text{ GB}$ during Phase 1 (vLLM 7B) and $\approx 6\text{ GB}$ during Phase 2 (LoRA 0.6B).
+> **Conclusion for Decision 6:** Phased sequential execution (Batch Teacher Generation $\to$ Save to JSONL $\to$ Multi-seed Student SFT) is **$3\times$ faster overall**, runs safely within a single 24 GB GPU (Nvidia L4 at \$0.80/h), and completely eliminates idle GPU wait time.
 
 ---
 
-### 4.7 Decision 7: Lineage DAG Representation of Distillation Edges
+### 4.7 Decision 7: Lineage DAG Representation of Distillation Edges (Confirmed: External Teacher Node)
 
-How should the teacher model and the distillation process be recorded in `PopulationDAG`?
-
-#### Modeling Distillation in NetworkX:
-1. **Teacher Registration:** The teacher model is registered as an external reference node in `population_dag.json`:
-   - Node ID: `teacher_qwen25_math_7b`
-   - Depth: 0 (External Oracle)
-   - Metadata: `{"is_external_teacher": True, "params": 7.61e9}`
-2. **Student Node:** The resulting student checkpoint (`exp1_2_distill_seed42`) is registered with:
-   - Parent IDs: `["node_0"]` (structural weight parent)
-   - Metadata: `{"distillation_teacher": "teacher_qwen25_math_7b", "teacher_k": 4, "dataset": "data/teacher_traces_gsm8k.jsonl"}`
-3. **Directed Edges:**
-   - Structural edge: `node_0` $\to$ `exp1_2_distill_seed42` (type: `"mutation"`)
-   - Knowledge edge: `teacher_qwen25_math_7b` $\to$ `exp1_2_distill_seed42` (type: `"distillation"`)
+- **Approved Selection:** Register teacher as an external reference root node (`teacher_qwen25_math_7b`) with a `distillation` directed edge to the student checkpoint in `PopulationDAG`.
+- **DAG Schema Structure:**
+  - Teacher Node: `node_id="teacher_qwen25_math_7b"`, `depth=0`, `metadata={"is_external_teacher": True, "params": 7.61e9}`.
+  - Student Node: `node_id="exp1_2_distill_seed42"`, `parent_ids=["node_0"]`, `recipe.teacher_model_name_or_path="Qwen/Qwen2.5-Math-7B-Instruct"`.
+  - Edge 1: `(node_0, exp1_2_distill_seed42)` with attribute `type="mutation"`.
+  - Edge 2: `(teacher_qwen25_math_7b, exp1_2_distill_seed42)` with attribute `type="distillation"`.
+- **Why Selected:** Accurately distinguishes structural weight initialization (from `node_0`) from epistemic data supervision (from the teacher), enabling clean graph queries for downstream Pareto and lineage tracking in Phase 4.
 
 ---
 

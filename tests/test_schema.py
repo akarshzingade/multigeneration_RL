@@ -80,6 +80,50 @@ seed: 99
     assert recipe.seed == 99
 
 
+def test_distill_training_recipe_from_experiment_yaml():
+    yaml_content = """
+experiment_id: "exp1_2_distill_baseline"
+model:
+  name_or_path: "Qwen/Qwen3-0.6B"
+teacher:
+  name_or_path: "Qwen/Qwen2.5-Math-7B-Instruct"
+  k_samples: 4
+  temperature: 0.7
+  max_new_tokens: 512
+  traces_path: "data/teacher_traces_gsm8k.jsonl"
+peft:
+  rank: 16
+  alpha: 32
+sft:
+  learning_rate: 2.0e-4
+  batch_size: 8
+  gradient_accumulation_steps: 2
+  response_template: "<think>"
+budget:
+  target_flops: 1.0e16
+  accounting_mode: "amortized"
+seed: 42
+"""
+    with tempfile.NamedTemporaryFile(suffix=".yaml", mode="w", delete=False) as f:
+        f.write(yaml_content)
+        f.flush()
+        recipe = TrainingRecipe.from_yaml(f.name)
+
+    assert recipe.algorithm == "distill"
+    assert recipe.teacher_model_name_or_path == "Qwen/Qwen2.5-Math-7B-Instruct"
+    assert recipe.teacher_k_samples == 4
+    assert recipe.teacher_temperature == 0.7
+    assert recipe.teacher_max_tokens == 512
+    assert recipe.teacher_trace_dataset_path == "data/teacher_traces_gsm8k.jsonl"
+    assert recipe.learning_rate == 2.0e-4
+    assert recipe.batch_size == 8
+    assert recipe.gradient_accumulation_steps == 2
+    assert recipe.response_template == "<think>"
+    assert recipe.accounting_mode == "amortized"
+    assert recipe.target_flop_budget == 1.0e16
+    assert recipe.seed == 42
+
+
 def test_capability_profile_creation():
     profile = CapabilityProfile(
         benchmark="gsm8k",

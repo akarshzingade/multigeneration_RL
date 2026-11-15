@@ -44,12 +44,55 @@ class PopulationDAG:
             )
             self.add_node(root_node)
 
-    def add_node(self, node: ModelNode) -> None:
+    def add_edge(
+        self, source_id: str, target_id: str, edge_type: str = "mutation", **attrs: Any
+    ) -> None:
+        """Add a directed edge between two nodes with semantic attributes."""
+        self.graph.add_edge(source_id, target_id, edge_type=edge_type, **attrs)
+
+    def register_teacher_node(
+        self,
+        teacher_id: str = "teacher_qwen25_math_7b",
+        model_name_or_path: str = "Qwen/Qwen2.5-Math-7B-Instruct",
+        params: float = 7.61e9,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> ModelNode:
+        """Register an external reference teacher node in the population DAG."""
+        if teacher_id in self.graph:
+            return self.get_node(teacher_id)  # type: ignore[return-value]
+
+        meta = {"is_external_teacher": True, "params": params}
+        if metadata:
+            meta.update(metadata)
+        recipe = TrainingRecipe(
+            algorithm="distill",
+            base_model_name_or_path=model_name_or_path,
+            target_flop_budget=0.0,
+        )
+        teacher_node = ModelNode(
+            node_id=teacher_id,
+            parent_ids=[],
+            depth=0,
+            recipe=recipe,
+            adapter_path=None,
+            cumulative_flops=0.0,
+            metadata=meta,
+        )
+        self.add_node(teacher_node)
+        return teacher_node
+
+    def add_node(self, node: ModelNode, edge_type: str = "mutation") -> None:
         """Add a model checkpoint node to the graph and connect to parent nodes."""
         self.graph.add_node(node.node_id, data=node.model_dump())
         for parent_id in node.parent_ids:
             if parent_id in self.graph:
-                self.graph.add_edge(parent_id, node.node_id)
+                parent_data = self.graph.nodes[parent_id].get("data", {})
+                is_teacher = (
+                    parent_data.get("metadata", {}).get("is_external_teacher", False)
+                    or "teacher" in parent_id.lower()
+                )
+                etype = "distillation" if is_teacher else edge_type
+                self.graph.add_edge(parent_id, node.node_id, edge_type=etype)
             else:
                 logger.warning(
                     "Parent node %s not found in graph when adding %s.",
@@ -136,10 +179,16 @@ class PopulationDAG:
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert graph to a serializable dictionary."""
+        edges_data: List[Any] = []
+        for u, v, data in self.graph.edges(data=True):
+            if data:
+                edges_data.append({"source": u, "target": v, **data})
+            else:
+                edges_data.append([u, v])
         return {
             "root_model_name": self.root_model_name,
             "nodes": [self.graph.nodes[n]["data"] for n in self.graph.nodes],
-            "edges": list(self.graph.edges),
+            "edges": edges_data,
         }
 
     def save_to_json(self, filepath: str) -> None:
@@ -162,7 +211,14 @@ class PopulationDAG:
             node = ModelNode.model_validate(node_dict)
             dag.graph.add_node(node.node_id, data=node.model_dump())
 
-        for u, v in data.get("edges", []):
-            dag.graph.add_edge(u, v)
+        for edge in data.get("edges", []):
+            if isinstance(edge, dict):
+                src = edge.get("source")
+                tgt = edge.get("target")
+                attrs = {k: v for k, v in edge.items() if k not in ("source", "target")}
+                if src and tgt:
+                    dag.graph.add_edge(src, tgt, **attrs)
+            elif isinstance(edge, (list, tuple)) and len(edge) >= 2:
+                dag.graph.add_edge(edge[0], edge[1])
 
         return dag

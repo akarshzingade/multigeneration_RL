@@ -23,7 +23,7 @@ class TrainingRecipe(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    algorithm: Literal["grpo", "sft", "mixed"] = "grpo"
+    algorithm: Literal["grpo", "sft", "distill", "mixed"] = "grpo"
     base_model_name_or_path: str = "Qwen/Qwen3-0.6B"
     parent_adapter_path: Optional[str] = None
 
@@ -54,7 +54,21 @@ class TrainingRecipe(BaseModel):
     max_completion_length: int = 512
     temperature: float = 0.9
 
-    # Reward Formulation
+    # Distillation & Teacher Hyperparameters (EXP-1.2)
+    teacher_model_name_or_path: Optional[str] = "Qwen/Qwen2.5-Math-7B-Instruct"
+    teacher_k_samples: int = 4
+    teacher_temperature: float = 0.7
+    teacher_max_tokens: int = 512
+    teacher_trace_dataset_path: Optional[str] = "data/teacher_traces_gsm8k.jsonl"
+    teacher_budget_ratio: float = 0.20
+
+    # SFT Optimization Hyperparameters (EXP-1.2)
+    batch_size: int = 8
+    gradient_accumulation_steps: int = 2
+    max_seq_length: int = 1024
+    response_template: str = "<think>"
+
+    # Reward Formulation (GRPO)
     correctness_reward_weight: float = 1.0
     format_reward_weight: float = 0.1
 
@@ -65,6 +79,7 @@ class TrainingRecipe(BaseModel):
 
     # Compute Budget & Checkpointing
     target_flop_budget: float = 1.0e16
+    accounting_mode: Literal["amortized", "strict_split"] = "amortized"
     intermediate_eval_interval_flops: float = 2.0e15
     seed: int = 42
 
@@ -79,10 +94,32 @@ class TrainingRecipe(BaseModel):
 
         # Flatten nested experiment YAML structures if present
         flat: Dict[str, Any] = {}
+        if "algorithm" in raw:
+            flat["algorithm"] = raw["algorithm"]
+        elif "experiment_id" in raw and "distill" in str(raw["experiment_id"]):
+            flat["algorithm"] = "distill"
+
         if "model" in raw and isinstance(raw["model"], dict):
             flat["base_model_name_or_path"] = raw["model"].get(
                 "name_or_path", "Qwen/Qwen3-0.6B"
             )
+        if "teacher" in raw and isinstance(raw["teacher"], dict):
+            t = raw["teacher"]
+            if "name_or_path" in t:
+                flat["teacher_model_name_or_path"] = t["name_or_path"]
+            if "k_samples" in t:
+                flat["teacher_k_samples"] = int(t["k_samples"])
+            if "temperature" in t:
+                flat["teacher_temperature"] = float(t["temperature"])
+            if "max_new_tokens" in t:
+                flat["teacher_max_tokens"] = int(t["max_new_tokens"])
+            elif "max_tokens" in t:
+                flat["teacher_max_tokens"] = int(t["max_tokens"])
+            if "traces_path" in t:
+                flat["teacher_trace_dataset_path"] = t["traces_path"]
+            elif "dataset_path" in t:
+                flat["teacher_trace_dataset_path"] = t["dataset_path"]
+
         if "peft" in raw and isinstance(raw["peft"], dict):
             peft = raw["peft"]
             if "rank" in peft:
@@ -93,6 +130,7 @@ class TrainingRecipe(BaseModel):
                 flat["lora_dropout"] = peft["dropout"]
             if "target_modules" in peft:
                 flat["target_modules"] = peft["target_modules"]
+
         if "grpo" in raw and isinstance(raw["grpo"], dict):
             grpo = raw["grpo"]
             for k in [
@@ -109,20 +147,42 @@ class TrainingRecipe(BaseModel):
             ]:
                 if k in grpo:
                     flat[k] = grpo[k]
+
+        if "sft" in raw and isinstance(raw["sft"], dict):
+            sft = raw["sft"]
+            for k in [
+                "learning_rate",
+                "batch_size",
+                "gradient_accumulation_steps",
+                "weight_decay",
+                "warmup_ratio",
+                "max_seq_length",
+                "response_template",
+                "use_vllm",
+            ]:
+                if k in sft:
+                    flat[k] = sft[k]
+
         if "rewards" in raw and isinstance(raw["rewards"], dict):
             rew = raw["rewards"]
             if "correctness_weight" in rew:
                 flat["correctness_reward_weight"] = rew["correctness_weight"]
             if "format_weight" in rew:
                 flat["format_reward_weight"] = rew["format_weight"]
+
         if "budget" in raw and isinstance(raw["budget"], dict):
             bud = raw["budget"]
             if "target_flops" in bud:
                 flat["target_flop_budget"] = float(bud["target_flops"])
+            if "accounting_mode" in bud:
+                flat["accounting_mode"] = str(bud["accounting_mode"])
+            if "teacher_budget_ratio" in bud:
+                flat["teacher_budget_ratio"] = float(bud["teacher_budget_ratio"])
             if "intermediate_eval_interval_flops" in bud:
                 flat["intermediate_eval_interval_flops"] = float(
                     bud["intermediate_eval_interval_flops"]
                 )
+
         if "dataset" in raw and isinstance(raw["dataset"], dict):
             ds = raw["dataset"]
             if "name" in ds:
@@ -131,6 +191,7 @@ class TrainingRecipe(BaseModel):
                 flat["dataset_subset"] = ds["subset"]
             if "num_shots" in ds:
                 flat["num_shots"] = ds["num_shots"]
+
         if "seed" in raw:
             flat["seed"] = raw["seed"]
 
