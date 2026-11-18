@@ -243,7 +243,7 @@ This section specifies every component of the codebase, detailing its exact purp
 
 ### 4.6 Experiment Runner Scripts (`scripts/`)
 
-#### `scripts/run_h1_experiment.py`
+#### `scripts/run_mixed_experiment.py`
 - **What we will use it for:**
   - Executing the Milestone 1 benchmark to test **H1** (Mixed Learning vs RL-only vs Distill-only).
   - Running each condition under identical compute constraints ($1.0 \times 10^{16}$ FLOPs) on `Qwen2.5-0.5B` and logging held-out GSM8K accuracy curves.
@@ -303,7 +303,7 @@ multigen-rl/
 │       ├── controller_study.py         # WHAT WE USE IT FOR: Optuna multi-objective search governing population evolution
 │       └── baselines.py                # WHAT WE USE IT FOR: Random and Greedy baseline controllers for H4 comparison
 ├── scripts/
-│   ├── run_h1_experiment.py            # WHAT WE USE IT FOR: CLI to run Milestone 1 (H1: RL vs Distill vs Mixed)
+│   ├── run_mixed_experiment.py         # WHAT WE USE IT FOR: CLI to run Milestone 1 (H1: RL vs Distill vs Mixed)
 │   ├── run_controller.py               # WHAT WE USE IT FOR: CLI to run autonomous population evolution loop (H4)
 │   └── evaluate_population.py          # WHAT WE USE IT FOR: CLI to profile population diversity and ensembles (H2/H5)
 └── tests/

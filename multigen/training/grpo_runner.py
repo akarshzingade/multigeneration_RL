@@ -59,6 +59,91 @@ except (ImportError, NameError, Exception) as e:
     logger.debug("trl import failed: %s", e)
 
 
+class GRPOPlateauCallback(TrainerCallback):
+    """Monitors reward or loss during GRPO training and stops when improvement plateaus."""
+
+    def __init__(
+        self,
+        patience: int = 3,
+        threshold: float = 0.001,
+        metric_name: str = "reward",
+        mode: str = "max",
+        window_size: int = 5,
+    ) -> None:
+        self.patience = patience
+        self.threshold = threshold
+        self.metric_name = metric_name
+        self.mode = mode
+        self.window_size = window_size
+        self.history: List[float] = []
+        self.smoothed_history: List[float] = []
+        self.best_value: Optional[float] = None
+        self.patience_counter: int = 0
+        self.is_plateaued: bool = False
+
+    def on_log(
+        self,
+        args: Any,
+        state: Any,
+        control: Any,
+        logs: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> None:
+        if logs is None or not isinstance(logs, dict):
+            return
+
+        target_val = None
+        if self.metric_name in logs:
+            target_val = logs[self.metric_name]
+        elif f"eval_{self.metric_name}" in logs:
+            target_val = logs[f"eval_{self.metric_name}"]
+        elif self.metric_name == "reward":
+            for k in logs:
+                if "reward" in k.lower():
+                    target_val = logs[k]
+                    break
+
+        if target_val is None or not isinstance(target_val, (int, float)):
+            return
+
+        val = float(target_val)
+        self.history.append(val)
+
+        recent = self.history[-self.window_size :]
+        smoothed = sum(recent) / len(recent)
+        self.smoothed_history.append(smoothed)
+
+        if self.best_value is None:
+            self.best_value = smoothed
+            self.patience_counter = 0
+            return
+
+        if self.mode == "max":
+            improved = (smoothed - self.best_value) > self.threshold
+        else:
+            improved = (self.best_value - smoothed) > self.threshold
+
+        if improved:
+            self.best_value = smoothed
+            self.patience_counter = 0
+            logger.info(
+                f"[GRPOPlateauCallback] Step {state.global_step}: Metric improved to {smoothed:.4f}. Resetting patience counter."
+            )
+        else:
+            self.patience_counter += 1
+            logger.info(
+                f"[GRPOPlateauCallback] Step {state.global_step}: Metric plateaued at {smoothed:.4f} (best: {self.best_value:.4f}). "
+                f"Patience: {self.patience_counter}/{self.patience}"
+            )
+            if self.patience_counter >= self.patience:
+                control.should_training_stop = True
+                control.should_save = True
+                self.is_plateaued = True
+                logger.info(
+                    f"[GRPOPlateauCallback] Early stopping triggered! Plateau detected on '{self.metric_name}' after {self.patience} checks without improvement."
+                )
+
+
 class GRPOBudgetTrackingCallback(FLOPBudgetCallback):
     """Callback that monitors FLOP budget and triggers intermediate checkpoints."""
 
@@ -118,12 +203,20 @@ class GRPOBudgetTrackingCallback(FLOPBudgetCallback):
 class GRPORunner:
     """Orchestrates GRPO training with strict compute budget enforcement."""
 
-    def __init__(self, recipe: TrainingRecipe, output_dir: str) -> None:
+    def __init__(
+        self,
+        recipe: TrainingRecipe,
+        output_dir: str,
+        accumulator: Optional[FLOPAccumulator] = None,
+    ) -> None:
         self.recipe = recipe
         self.output_dir = output_dir
         os.makedirs(output_dir, exist_ok=True)
 
-        self.accumulator = FLOPAccumulator(target_budget=recipe.target_flop_budget)
+        if accumulator is not None:
+            self.accumulator = accumulator
+        else:
+            self.accumulator = FLOPAccumulator(target_budget=recipe.target_flop_budget)
         self.intermediate_checkpoints: List[Dict[str, Any]] = []
 
     def _determine_vllm_usage(self) -> bool:
@@ -269,6 +362,17 @@ class GRPORunner:
             intermediate_interval_flops=self.recipe.intermediate_eval_interval_flops,
             save_checkpoint_fn=save_checkpoint,
         )
+        callbacks = [callback]
+
+        plateau_callback: Optional[GRPOPlateauCallback] = None
+        if self.recipe.termination_criterion == "plateau":
+            plateau_callback = GRPOPlateauCallback(
+                patience=self.recipe.early_stopping_patience,
+                threshold=self.recipe.early_stopping_threshold,
+                metric_name="reward",
+                mode="max",
+            )
+            callbacks.append(plateau_callback)
 
         import inspect
 
@@ -283,7 +387,7 @@ class GRPORunner:
             "weight_decay": self.recipe.weight_decay,
             "warmup_ratio": self.recipe.warmup_ratio,
             "logging_steps": 10,
-            "save_strategy": "no",  # Checkpoints are managed by FLOP milestones
+            "save_strategy": "no",  # Checkpoints are managed by FLOP milestones or final save
             "per_device_train_batch_size": self.recipe.group_size,
             "gradient_accumulation_steps": 1,
             "generation_batch_size": self.recipe.group_size,
@@ -292,6 +396,17 @@ class GRPORunner:
             "fp16": False,
             "seed": self.recipe.seed,
         }
+
+        # Handle termination criteria: epochs, steps, or plateau
+        if self.recipe.num_train_epochs is not None:
+            candidate_grpo_args["num_train_epochs"] = self.recipe.num_train_epochs
+        elif self.recipe.termination_criterion == "plateau":
+            candidate_grpo_args["num_train_epochs"] = 5.0  # Generous upper bound; halted by plateau callback
+        elif self.recipe.target_flop_budget is None:
+            candidate_grpo_args["num_train_epochs"] = 1.0  # Default 1 epoch if unconstrained and no plateau
+
+        if self.recipe.max_steps is not None and self.recipe.max_steps > 0:
+            candidate_grpo_args["max_steps"] = self.recipe.max_steps
 
         # Filter strictly to parameters accepted by the installed TRL GRPOConfig version
         sig = inspect.signature(GRPOConfig.__init__)
@@ -306,14 +421,20 @@ class GRPORunner:
             args=training_args,
             train_dataset=train_dataset,
             eval_dataset=eval_dataset,
-            callbacks=[callback],
+            callbacks=callbacks,
         )
 
+        budget_disp = (
+            f"{self.recipe.target_flop_budget:.2e} FLOPs"
+            if self.recipe.target_flop_budget
+            else "None (unconstrained)"
+        )
         logger.info(
-            "Starting GRPO training: model=%s, group_size=%d, target_budget=%.2e FLOPs",
+            "Starting GRPO training: model=%s, group_size=%d, target_budget=%s, termination_criterion=%s",
             self.recipe.base_model_name_or_path,
             self.recipe.group_size,
-            self.recipe.target_flop_budget,
+            budget_disp,
+            self.recipe.termination_criterion,
         )
 
         trainer.train()
@@ -326,6 +447,7 @@ class GRPORunner:
 
         self.intermediate_checkpoints = callback.saved_milestones
         total_steps = trainer.state.global_step if hasattr(trainer, "state") else 0
+        is_plateaued = getattr(plateau_callback, "is_plateaued", False) if plateau_callback else False
 
         # Free trainer memory and flush CUDA cache before evaluation starts
         del trainer
@@ -339,6 +461,7 @@ class GRPORunner:
             "cumulative_flops": self.accumulator.cumulative_flops,
             "total_steps": total_steps,
             "is_exhausted": self.accumulator.is_exhausted,
+            "is_plateaued": is_plateaued,
             "intermediate_checkpoints": self.intermediate_checkpoints,
             "summary": self.accumulator.get_summary(),
         }

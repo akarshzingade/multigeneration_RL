@@ -1,0 +1,67 @@
+# ==============================================================================
+# Configuration: Experiment 1.1 - Standalone RL (GRPO) (Unconstrained / Plateau)
+# ==============================================================================
+# Unconstrained RL exploration on Qwen/Qwen3-0.6B without FLOP budget ceiling.
+# Training terminates upon plateau detection (reward stabilization) or epoch ceiling.
+
+experiment_id: "exp1_1_grpo_unconstrained"
+description: "Standalone RL (GRPO) without FLOP constraint, plateau-governed early stopping"
+
+model:
+  name_or_path: "Qwen/Qwen3-0.6B"
+  torch_dtype: "bfloat16"
+
+peft:
+  type: "lora"
+  rank: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+
+grpo:
+  group_size: 8
+  learning_rate: 2.0e-5
+  kl_beta: 0.04
+  clip_epsilon: 0.2
+  weight_decay: 0.01
+  warmup_ratio: 0.1
+  max_prompt_length: 512
+  max_completion_length: 512
+  temperature: 0.9
+  use_vllm: null # auto-detect: True on CUDA, False on macOS / CPU
+
+rewards:
+  correctness_weight: 1.0
+  format_weight: 0.1
+
+budget:
+  target_flops: null # Unconstrained: No FLOP budget cutoff
+
+termination:
+  criterion: "plateau" # Options: "plateau", "epochs", "steps"
+  num_train_epochs: 3.0
+  early_stopping_patience: 3
+  early_stopping_threshold: 0.001
+  eval_steps: 50
+
+dataset:
+  name: "openai/gsm8k"
+  subset: "main"
+  num_shots: 0
+
+output:
+  checkpoints_dir: "checkpoints/exp1_1_grpo_unconstrained"
+  dag_path: "population_dag.json"
+  eval_output_dir: "evals"
+
+seeds:
+  - 42
+  - 43
+  - 44

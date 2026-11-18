@@ -1,0 +1,110 @@
+# ==============================================================================
+# Experiment 1.3: Mixed Learning (RL + Distillation) Production Config
+# ==============================================================================
+experiment_id: "exp1_3_mixed_learning"
+description: "Benchmark testing Hypothesis H1: Mixed Learning vs Pure RL and Pure KD at Matched Compute"
+algorithm: "mixed"
+
+# Hybrid mode architecture (Decision 4.1: Option A default, all supported)
+mode: "interleaved_sequential" # Supported: "interleaved_sequential" (default), "teacher_regularized", "micro_interleaved"
+num_cycles: 4 # Used only if mode == "micro_interleaved"
+
+# Reference policy initialization (Decision 4.3: Option A default, all supported)
+ref_policy_source: "sft_warmup" # Supported: "sft_warmup" (default), "base_model", "ema"
+ema_decay: 0.99 # Used only if ref_policy_source == "ema"
+
+# Optimizer transition strategy (Decision 4.4: Option A default, both supported)
+optimizer_transition: "reset_and_warmup" # Supported: "reset_and_warmup" (default), "carryover_rescale"
+
+model:
+  name_or_path: "Qwen/Qwen3-0.6B"
+  torch_dtype: "bfloat16"
+  attn_implementation: "flash_attention_2"
+
+teacher:
+  name_or_path: "Qwen/Qwen2.5-Math-7B-Instruct"
+  k_samples: 4
+  temperature: 0.7
+  max_new_tokens: 512
+  traces_path: "data/teacher_traces_gsm8k.jsonl"
+  budget_ratio: 0.0 # Traces pre-generated or amortized
+
+peft:
+  type: "lora"
+  rank: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+
+# Phase 1: Distillation Configuration (25% Budget: 2.5e15 FLOPs, Decision 4.2)
+sft_phase:
+  distill_budget_ratio: 0.25 # Decision 4.2 (25% SFT / 75% GRPO)
+  learning_rate: 2.0e-4
+  batch_size: 8
+  gradient_accumulation_steps: 2
+  weight_decay: 0.01
+  warmup_ratio: 0.05
+  max_seq_length: 1024
+  response_template: "<think>"
+
+# Phase 2: GRPO Exploration Configuration (75% Budget: 7.5e15 FLOPs)
+grpo_phase:
+  group_size: 8
+  learning_rate: 2.0e-5
+  kl_beta: 0.04
+  clip_epsilon: 0.2
+  weight_decay: 0.01
+  warmup_ratio: 0.10
+  max_prompt_length: 512
+  max_completion_length: 512
+  temperature: 0.9
+
+rewards:
+  correctness_weight: 1.0
+  format_weight: 0.1
+
+budget:
+  target_flops: 1.0e16
+  accounting_mode: "strict_split"
+  intermediate_eval_interval_flops: 2.0e15
+
+resumption:
+  enabled: true
+  auto_resume: true
+  journal_filename: "recovery_state.json"
+
+  # Component 1: Step-based local auto-checkpointing (toggleable independently)
+  enable_step_checkpoints: true
+  checkpoint_interval_steps: 50
+
+  # Component 2: FLOP milestone checkpoints & volume commits (toggleable independently)
+  enable_milestone_checkpoints: true
+  intermediate_eval_interval_flops: 2.0e15
+
+  # Component 3: POSIX signal trap emergency saves (toggleable independently)
+  enable_signal_trapping: true
+  save_on_signals:
+    - "SIGINT"
+    - "SIGTERM"
+
+dataset:
+  name: "openai/gsm8k"
+  subset: "main"
+  num_shots: 0
+
+output:
+  base_dir: "checkpoints/exp1_3_mixed"
+  dag_path: "population_dag.json"
+  eval_output_dir: "evals"
+
+seeds:
+  - 42
+  - 43
+  - 44

@@ -85,6 +85,43 @@ def parse_args() -> argparse.Namespace:
         help="Optional override for target FLOP compute budget",
     )
     parser.add_argument(
+        "--no-flop-constraint",
+        "--no-flop-budget",
+        action="store_true",
+        help="Train without FLOP compute budget ceiling (stops via plateau/epochs/steps)",
+    )
+    parser.add_argument(
+        "--termination-criterion",
+        type=str,
+        choices=["plateau", "epochs", "steps", "flops"],
+        default=None,
+        help="Stopping criterion override (default: plateau if unconstrained, else flops)",
+    )
+    parser.add_argument(
+        "--epochs",
+        type=float,
+        default=None,
+        help="Number of training epochs override",
+    )
+    parser.add_argument(
+        "--max-steps",
+        type=int,
+        default=None,
+        help="Maximum training steps override",
+    )
+    parser.add_argument(
+        "--patience",
+        type=int,
+        default=None,
+        help="Early stopping patience (eval rounds without improvement before halt)",
+    )
+    parser.add_argument(
+        "--run-tag",
+        type=str,
+        default=None,
+        help="Explicit run tag for checkpoints, eval JSONs, and DAG node IDs (auto-generated if omitted)",
+    )
+    parser.add_argument(
         "--generate-traces-only",
         action="store_true",
         help="Only run Stage 1 (generate and verify teacher traces) and exit",
@@ -164,20 +201,48 @@ def main() -> None:
     recipe = TrainingRecipe.from_yaml(args.config)
     if args.seed is not None:
         recipe.seed = args.seed
-    if args.target_flops is not None:
+    if args.no_flop_constraint:
+        recipe.target_flop_budget = None
+    elif args.target_flops is not None:
         recipe.target_flop_budget = args.target_flops
+
+    if args.termination_criterion is not None:
+        recipe.termination_criterion = args.termination_criterion
+    elif args.no_flop_constraint and recipe.termination_criterion == "flops":
+        recipe.termination_criterion = "plateau"
+
+    if args.epochs is not None:
+        recipe.num_train_epochs = args.epochs
+    if args.max_steps is not None:
+        recipe.max_steps = args.max_steps
+    if args.patience is not None:
+        recipe.early_stopping_patience = args.patience
+
     if args.traces_path is not None:
         recipe.teacher_trace_dataset_path = args.traces_path
 
-    output_dir = args.output_dir or f"checkpoints/exp1_2_distill_seed{recipe.seed}"
+    raw_tag = (
+        args.run_tag.strip().lstrip("_")
+        if args.run_tag
+        else ("unconstrained" if recipe.target_flop_budget is None else "baseline")
+    )
+    run_tag = f"_{raw_tag}"
+    output_dir = args.output_dir or f"checkpoints/exp1_2_distill{run_tag}_seed{recipe.seed}"
     os.makedirs(output_dir, exist_ok=True)
     os.makedirs(args.eval_output_dir, exist_ok=True)
+
+    budget_disp = (
+        f"{recipe.target_flop_budget:.2e} FLOPs"
+        if recipe.target_flop_budget
+        else "None (unconstrained)"
+    )
 
     logger.info("=" * 70)
     logger.info("EXPERIMENT 1.2: Standalone Knowledge Distillation (KD) Baseline")
     logger.info("Student Model:  %s", recipe.base_model_name_or_path)
     logger.info("Teacher Model:  %s", recipe.teacher_model_name_or_path)
-    logger.info("FLOP Budget:    %.2e FLOPs (%s mode)", recipe.target_flop_budget, recipe.accounting_mode)
+    logger.info("FLOP Budget:    %s (%s mode)", budget_disp, recipe.accounting_mode)
+    logger.info("Criterion:      %s", recipe.termination_criterion)
     logger.info("Seed:           %d", recipe.seed)
     logger.info("Output Dir:     %s", output_dir)
     logger.info("=" * 70)
@@ -271,7 +336,7 @@ def main() -> None:
         # Save standalone evaluation JSON artifact
         eval_artifact_path = os.path.join(
             args.eval_output_dir,
-            f"exp1_2_distill_seed{recipe.seed}_{args.eval_split}.json",
+            f"exp1_2_distill{run_tag}_seed{recipe.seed}_{args.eval_split}.json",
         )
         with open(eval_artifact_path, "w", encoding="utf-8") as f:
             json.dump(eval_result.to_dict(), f, indent=2, default=str)
@@ -304,7 +369,7 @@ def main() -> None:
     )
 
     # Register distilled student node
-    node_id = f"exp1_2_distill_seed{recipe.seed}"
+    node_id = f"exp1_2_distill{run_tag}_seed{recipe.seed}"
     student_node = ModelNode(
         node_id=node_id,
         parent_ids=["node_0"],

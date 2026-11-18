@@ -43,7 +43,7 @@ image = (
     .pip_install(
         "torch>=2.4.0",
         "transformers>=4.40.0",
-        "trl>=0.8.0,<0.14.0",
+        "trl>=0.14.0",
         "peft>=0.10.0",
         "vllm>=0.4.0",
         "math-verify>=0.1.0",
@@ -73,6 +73,13 @@ def _execute_distill(
     max_train_samples: int = 0,
     max_eval_samples: int = 0,
     skip_eval: bool = False,
+    no_flop_constraint: bool = False,
+    config: str = "",
+    termination_criterion: str = "",
+    epochs: float = 0.0,
+    max_steps: int = 0,
+    patience: int = 0,
+    run_tag: str = "",
 ) -> str:
     """Internal helper to execute Experiment 1.2 within container."""
     os.chdir("/root/multigen-rl")
@@ -81,7 +88,18 @@ def _execute_distill(
     os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
     os.environ["VLLM_USE_V1"] = "0"
 
-    out_dir = f"/root/storage/checkpoints/exp1_2_distill_seed{seed}"
+    cfg = config
+    if not cfg:
+        cfg = (
+            "configs/experiments/exp1_2_distill_unconstrained.yaml"
+            if (no_flop_constraint or target_flops <= 0)
+            else "configs/experiments/exp1_2_distill_baseline.yaml"
+        )
+
+    out_tag = run_tag.strip().lstrip("_") if run_tag else (
+        "unconstrained" if (no_flop_constraint or target_flops <= 0) else "baseline"
+    )
+    out_dir = f"/root/storage/checkpoints/exp1_2_distill_{out_tag}_seed{seed}"
     dag_path = "/root/storage/population_dag.json"
     eval_dir = "/root/storage/evals"
 
@@ -99,7 +117,7 @@ def _execute_distill(
             "python",
             "scripts/run_distill_experiment.py",
             "--config",
-            "configs/experiments/exp1_2_distill_baseline.yaml",
+            cfg,
             "--generate-traces-only",
             "--traces-path",
             traces_path,
@@ -111,14 +129,13 @@ def _execute_distill(
         return f"Completed Stage 1: Verified teacher traces saved and committed to {traces_path}."
 
     # Stage 1: Ensure verified teacher traces exist on the persistent volume in a dedicated process
-    # Running Stage 1 in its own subprocess guarantees the OS reclaims 100% of the 18 GB teacher GPU memory
     if not os.path.exists(traces_path) or os.path.getsize(traces_path) == 0:
         print(f"[{gpu_tag}] Generating teacher traces in isolated Stage 1 process...")
         trace_cmd = [
             "python",
             "scripts/run_distill_experiment.py",
             "--config",
-            "configs/experiments/exp1_2_distill_baseline.yaml",
+            cfg,
             "--generate-traces-only",
             "--traces-path",
             traces_path,
@@ -136,11 +153,11 @@ def _execute_distill(
         "python",
         "scripts/run_distill_experiment.py",
         "--config",
-        "configs/experiments/exp1_2_distill_baseline.yaml",
+        cfg,
         "--seed",
         str(seed),
-        "--target-flops",
-        str(target_flops),
+        "--run-tag",
+        out_tag,
         "--output-dir",
         out_dir,
         "--dag-path",
@@ -150,6 +167,20 @@ def _execute_distill(
         "--traces-path",
         traces_path,
     ]
+
+    if no_flop_constraint or target_flops <= 0:
+        cmd.append("--no-flop-constraint")
+    else:
+        cmd.extend(["--target-flops", str(target_flops)])
+
+    if termination_criterion:
+        cmd.extend(["--termination-criterion", termination_criterion])
+    if epochs > 0:
+        cmd.extend(["--epochs", str(epochs)])
+    if max_steps > 0:
+        cmd.extend(["--max-steps", str(max_steps)])
+    if patience > 0:
+        cmd.extend(["--patience", str(patience)])
     if max_train_samples > 0:
         cmd.extend(["--max-train-samples", str(max_train_samples)])
     if max_eval_samples > 0:
@@ -176,14 +207,22 @@ def run_distill(
     max_eval_samples: int = 0,
     skip_eval: bool = False,
     gpu_name: str = "L4",
+    no_flop_constraint: bool = False,
+    config: str = "",
+    termination_criterion: str = "",
+    epochs: float = 0.0,
+    max_steps: int = 0,
+    patience: int = 0,
+    run_tag: str = "",
 ) -> str:
     """Run single seed of Experiment 1.2."""
     import torch
 
     physical_gpu = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"
+    budget_label = "Unconstrained (No FLOP limit)" if (no_flop_constraint or target_flops <= 0) else f"{target_flops:.1e} FLOPs"
     print(f"Target GPU configured: {gpu_name} (Physical device: {physical_gpu})")
     print(
-        f"Launching EXP-1.2 on Modal (GPU: {gpu_name}, Physical: {physical_gpu}, Seed: {seed}, Budget: {target_flops:.1e} FLOPs)..."
+        f"Launching EXP-1.2 on Modal (GPU: {gpu_name}, Physical: {physical_gpu}, Seed: {seed}, Budget: {budget_label})..."
     )
     return _execute_distill(
         seed=seed,
@@ -193,6 +232,13 @@ def run_distill(
         max_train_samples=max_train_samples,
         max_eval_samples=max_eval_samples,
         skip_eval=skip_eval,
+        no_flop_constraint=no_flop_constraint,
+        config=config,
+        termination_criterion=termination_criterion,
+        epochs=epochs,
+        max_steps=max_steps,
+        patience=patience,
+        run_tag=run_tag,
     )
 
 
@@ -206,9 +252,19 @@ def main(
     max_eval_samples: int = 0,
     skip_eval: bool = False,
     gpu: str = "L4",
+    no_flop_constraint: bool = False,
+    config: str = "",
+    termination_criterion: str = "",
+    epochs: float = 0.0,
+    max_steps: int = 0,
+    patience: int = 0,
+    run_tag: str = "",
 ) -> None:
     """Local CLI entrypoint for triggering Modal runs."""
     selected_gpu = gpu.upper() if gpu else TARGET_GPU
+    resolved_tag = run_tag.strip().lstrip("_") if run_tag else (
+        "unconstrained" if (no_flop_constraint or target_flops <= 0) else "baseline"
+    )
 
     if generate_traces_only:
         print(f"Dispatching Stage 1: Generate & verify teacher traces on {selected_gpu}...")
@@ -220,14 +276,23 @@ def main(
             max_eval_samples=max_eval_samples,
             skip_eval=skip_eval,
             gpu_name=selected_gpu,
+            no_flop_constraint=no_flop_constraint,
+            config=config,
+            termination_criterion=termination_criterion,
+            epochs=epochs,
+            max_steps=max_steps,
+            patience=patience,
+            run_tag=resolved_tag,
         )
         print(f"✓ {res}")
         return
 
+    budget_label = "Unconstrained (No FLOP limit)" if (no_flop_constraint or target_flops <= 0) else f"{target_flops:.1e} FLOPs"
+
     if run_all_seeds:
         seeds = [42, 43, 44]
         print(
-            f"Dispatching parallel EXP-1.2 runs across seeds {seeds} on {selected_gpu}..."
+            f"Dispatching parallel EXP-1.2 runs across seeds {seeds} on {selected_gpu} (Tag: {resolved_tag}, Budget: {budget_label})..."
         )
         results = list(
             run_distill.starmap(
@@ -240,6 +305,13 @@ def main(
                         max_eval_samples,
                         skip_eval,
                         selected_gpu,
+                        no_flop_constraint,
+                        config,
+                        termination_criterion,
+                        epochs,
+                        max_steps,
+                        patience,
+                        resolved_tag,
                     )
                     for s in seeds
                 ]
@@ -247,8 +319,11 @@ def main(
         )
         for r in results:
             print(f"✓ {r}")
+        print("\nAll seeds finished! Download artifacts via:")
+        print("  modal volume get multigen-storage evals/ ./evals/")
+        print("  modal volume get multigen-storage population_dag.json ./population_dag.json")
     else:
-        print(f"Dispatching single EXP-1.2 run for seed {seed} on {selected_gpu}...")
+        print(f"Dispatching single EXP-1.2 run for seed {seed} on {selected_gpu} (Tag: {resolved_tag}, Budget: {budget_label})...")
         res = run_distill.remote(
             seed=seed,
             target_flops=target_flops,
@@ -257,5 +332,15 @@ def main(
             max_eval_samples=max_eval_samples,
             skip_eval=skip_eval,
             gpu_name=selected_gpu,
+            no_flop_constraint=no_flop_constraint,
+            config=config,
+            termination_criterion=termination_criterion,
+            epochs=epochs,
+            max_steps=max_steps,
+            patience=patience,
+            run_tag=resolved_tag,
         )
         print(f"✓ {res}")
+        print("\nDownload artifacts via:")
+        print(f"  modal volume get multigen-storage evals/exp1_2_distill_{resolved_tag}_seed{seed}_test.json ./evals/")
+        print("  modal volume get multigen-storage population_dag.json ./population_dag.json")

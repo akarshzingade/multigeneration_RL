@@ -6,8 +6,11 @@ model queries, and teacher distillation passes, enforcing compute budget parity.
 
 from __future__ import annotations
 
+import json
 import logging
-from typing import Any, Dict, List, Optional
+import os
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +129,7 @@ class FLOPAccumulator:
     @property
     def is_exhausted(self) -> bool:
         """Check if training compute has reached or exceeded target budget."""
-        if self.target_budget is None:
+        if self.target_budget is None or self.target_budget <= 0:
             return False
         return self.cumulative_flops >= self.target_budget
 
@@ -182,6 +185,52 @@ class FLOPAccumulator:
         self.eval_flops = 0.0
         self.total_tokens_processed = 0
         self.step_history.clear()
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize accumulator state for resumption journaling."""
+        return {
+            "target_budget": self.target_budget,
+            "cumulative_flops": self.cumulative_flops,
+            "rollout_flops": self.rollout_flops,
+            "train_flops": self.train_flops,
+            "teacher_flops": self.teacher_flops,
+            "ref_flops": self.ref_flops,
+            "eval_flops": self.eval_flops,
+            "total_tokens_processed": self.total_tokens_processed,
+            "step_history": self.step_history,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "FLOPAccumulator":
+        """Deserialize accumulator state from dictionary."""
+        acc = cls(target_budget=data.get("target_budget"))
+        acc.cumulative_flops = float(data.get("cumulative_flops", 0.0))
+        acc.rollout_flops = float(data.get("rollout_flops", 0.0))
+        acc.train_flops = float(data.get("train_flops", 0.0))
+        acc.teacher_flops = float(data.get("teacher_flops", 0.0))
+        acc.ref_flops = float(data.get("ref_flops", 0.0))
+        acc.eval_flops = float(data.get("eval_flops", 0.0))
+        acc.total_tokens_processed = int(data.get("total_tokens_processed", 0))
+        acc.step_history = list(data.get("step_history", []))
+        return acc
+
+    def save(self, path: Union[str, Path]) -> None:
+        """Atomically persist FLOP ledger state to a JSON file."""
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_suffix(".tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(self.to_dict(), f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, p)
+
+    @classmethod
+    def load(cls, path: Union[str, Path]) -> "FLOPAccumulator":
+        """Load and deserialize FLOP ledger state from a JSON file."""
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return cls.from_dict(data)
 
 
 class FLOPBudgetCallback(TrainerCallback):

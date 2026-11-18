@@ -41,9 +41,9 @@ image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install("git")
     .pip_install(
-        "torch>=2.2.0",
+        "torch>=2.4.0",
         "transformers>=4.40.0",
-        "trl>=0.8.0",
+        "trl>=0.14.0",
         "peft>=0.10.0",
         "vllm>=0.4.0",
         "math-verify>=0.1.0",
@@ -52,6 +52,10 @@ image = (
         "pydantic>=2.0.0",
         "pyyaml>=6.0",
     )
+    .env({
+        "VLLM_WORKER_MULTIPROC_METHOD": "spawn",
+        "VLLM_USE_V1": "0",
+    })
     .add_local_dir("multigen", remote_path="/root/multigen-rl/multigen")
     .add_local_dir("scripts", remote_path="/root/multigen-rl/scripts")
     .add_local_dir("configs", remote_path="/root/multigen-rl/configs")
@@ -61,14 +65,36 @@ image = (
 volume = modal.Volume.from_name("multigen-storage", create_if_missing=True)
 
 
-def _execute_grpo(seed: int, target_flops: float, gpu_tag: str) -> str:
+def _execute_grpo(
+    seed: int,
+    target_flops: float,
+    gpu_tag: str,
+    no_flop_constraint: bool = False,
+    config: str = "",
+    termination_criterion: str = "",
+    epochs: float = 0.0,
+    max_steps: int = 0,
+    patience: int = 0,
+    run_tag: str = "",
+) -> str:
     """Internal helper to execute Experiment 1.1 within container."""
     os.chdir("/root/multigen-rl")
     os.environ["PYTHONPATH"] = "/root/multigen-rl"
     # Persist Hugging Face dataset & model weights cache across runs
     os.environ["HF_HOME"] = "/root/storage/hf_cache"
 
-    out_dir = f"/root/storage/checkpoints/exp1_1_grpo_seed{seed}"
+    cfg = config
+    if not cfg:
+        cfg = (
+            "configs/experiments/exp1_1_grpo_unconstrained.yaml"
+            if (no_flop_constraint or target_flops <= 0)
+            else "configs/experiments/exp1_1_grpo_baseline.yaml"
+        )
+
+    out_tag = run_tag.strip().lstrip("_") if run_tag else (
+        "unconstrained" if (no_flop_constraint or target_flops <= 0) else "baseline"
+    )
+    out_dir = f"/root/storage/checkpoints/exp1_1_grpo_{out_tag}_seed{seed}"
     dag_path = "/root/storage/population_dag.json"
     eval_dir = "/root/storage/evals"
 
@@ -79,11 +105,11 @@ def _execute_grpo(seed: int, target_flops: float, gpu_tag: str) -> str:
         "python",
         "scripts/run_grpo_experiment.py",
         "--config",
-        "configs/experiments/exp1_1_grpo_baseline.yaml",
+        cfg,
         "--seed",
         str(seed),
-        "--target-flops",
-        str(target_flops),
+        "--run-tag",
+        out_tag,
         "--output-dir",
         out_dir,
         "--dag-path",
@@ -91,6 +117,21 @@ def _execute_grpo(seed: int, target_flops: float, gpu_tag: str) -> str:
         "--eval-output-dir",
         eval_dir,
     ]
+
+    if no_flop_constraint or target_flops <= 0:
+        cmd.append("--no-flop-constraint")
+    else:
+        cmd.extend(["--target-flops", str(target_flops)])
+
+    if termination_criterion:
+        cmd.extend(["--termination-criterion", termination_criterion])
+    if epochs > 0:
+        cmd.extend(["--epochs", str(epochs)])
+    if max_steps > 0:
+        cmd.extend(["--max-steps", str(max_steps)])
+    if patience > 0:
+        cmd.extend(["--patience", str(patience)])
+
     subprocess.run(cmd, check=True)
     volume.commit()
     return f"Completed EXP-1.1 seed {seed} on {gpu_tag}. Artifacts committed to volume at {out_dir}"
@@ -100,12 +141,34 @@ def _execute_grpo(seed: int, target_flops: float, gpu_tag: str) -> str:
     gpu=TARGET_GPU,
     image=image,
     volumes={"/root/storage": volume},
-    timeout=3600,  # 1 hour maximum
+    timeout=7200,  # 2 hours maximum
 )
-def run_grpo(seed: int = 42, target_flops: float = 1.0e16, gpu_tag: str = "") -> str:
+def run_grpo(
+    seed: int = 42,
+    target_flops: float = 1.0e16,
+    gpu_tag: str = "",
+    no_flop_constraint: bool = False,
+    config: str = "",
+    termination_criterion: str = "",
+    epochs: float = 0.0,
+    max_steps: int = 0,
+    patience: int = 0,
+    run_tag: str = "",
+) -> str:
     """Execute EXP-1.1 on the configured GPU."""
     active_gpu = gpu_tag or TARGET_GPU
-    return _execute_grpo(seed=seed, target_flops=target_flops, gpu_tag=active_gpu)
+    return _execute_grpo(
+        seed=seed,
+        target_flops=target_flops,
+        gpu_tag=active_gpu,
+        no_flop_constraint=no_flop_constraint,
+        config=config,
+        termination_criterion=termination_criterion,
+        epochs=epochs,
+        max_steps=max_steps,
+        patience=patience,
+        run_tag=run_tag,
+    )
 
 
 @app.local_entrypoint()
@@ -115,14 +178,29 @@ def main(
     gpu: str = "",
     gpu_type: str = "",
     run_all_seeds: bool = False,
+    no_flop_constraint: bool = False,
+    config: str = "",
+    termination_criterion: str = "",
+    epochs: float = 0.0,
+    max_steps: int = 0,
+    patience: int = 0,
+    run_tag: str = "",
 ):
     """Local CLI entrypoint for launching Modal training."""
     active_gpu = (gpu or gpu_type or TARGET_GPU).upper()
     print(f"Target GPU configured: {active_gpu}")
+    budget_label = "Unconstrained (No FLOP limit)" if (no_flop_constraint or target_flops <= 0) else f"{target_flops:.1e} FLOPs"
+    resolved_tag = run_tag.strip().lstrip("_") if run_tag else (
+        "unconstrained" if (no_flop_constraint or target_flops <= 0) else "baseline"
+    )
+
     if run_all_seeds:
         seeds = [42, 43, 44]
-        print(f"Launching EXP-1.1 concurrently across 3 seeds {seeds} on {active_gpu}...")
-        args = [(s, target_flops, active_gpu) for s in seeds]
+        print(f"Launching EXP-1.1 concurrently across 3 seeds {seeds} on {active_gpu} (Tag: {resolved_tag}, Budget: {budget_label})...")
+        args = [
+            (s, target_flops, active_gpu, no_flop_constraint, config, termination_criterion, epochs, max_steps, patience, resolved_tag)
+            for s in seeds
+        ]
         results = list(run_grpo.starmap(args))
         for res in results:
             print("  ->", res)
@@ -130,9 +208,20 @@ def main(
         print("  modal volume get multigen-storage evals/ ./evals/")
         print("  modal volume get multigen-storage population_dag.json ./population_dag.json")
     else:
-        print(f"Launching EXP-1.1 on Modal (GPU: {active_gpu}, Seed: {seed}, Budget: {target_flops:.1e} FLOPs)...")
-        result = run_grpo.remote(seed=seed, target_flops=target_flops, gpu_tag=active_gpu)
+        print(f"Launching EXP-1.1 on Modal (GPU: {active_gpu}, Seed: {seed}, Tag: {resolved_tag}, Budget: {budget_label})...")
+        result = run_grpo.remote(
+            seed=seed,
+            target_flops=target_flops,
+            gpu_tag=active_gpu,
+            no_flop_constraint=no_flop_constraint,
+            config=config,
+            termination_criterion=termination_criterion,
+            epochs=epochs,
+            max_steps=max_steps,
+            patience=patience,
+            run_tag=resolved_tag,
+        )
         print("Result:", result)
         print("\nDownload results with:")
-        print(f"  modal volume get multigen-storage evals/exp1_1_grpo_seed{seed}_test.json ./evals/")
+        print(f"  modal volume get multigen-storage evals/exp1_1_grpo_{resolved_tag}_seed{seed}_test.json ./evals/")
         print("  modal volume get multigen-storage population_dag.json ./population_dag.json")

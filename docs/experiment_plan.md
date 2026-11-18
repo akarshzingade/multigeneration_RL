@@ -24,17 +24,19 @@ flowchart TD
     subgraph Phase 1: Foundational Baselines & Mixed Learning (H1)
         E0_2 --> E1_1[Exp 1.1: Pure RL / GRPO Baseline]
         E0_2 --> E1_2[Exp 1.2: Pure Distillation Baseline]
-        E1_1 --> E1_3[Exp 1.3: Mixed Learning H1 Benchmark]
+        E1_1 --> E1_3[Exp 1.3: Sequential Mixed Learning H1]
         E1_2 --> E1_3
+        E1_3 --> E1_4[Exp 1.4: Trace-Injected & Length-Penalized GRPO]
     end
 
     subgraph Phase 2: Behavioral Diversity & Solution Space (H2)
-        E1_3 --> E2_1[Exp 2.1: Multi-Objective Reward Branching]
+        E1_4 --> E2_1[Exp 2.1: Multi-Objective Reward Branching]
         E2_1 --> E2_2[Exp 2.2: Error Orthogonality & Oracle Pass@k H2]
     end
 
-    subgraph Phase 3: Cross-Model Peer Learning (H3)
-        E2_2 --> E3_1[Exp 3.1: Plateaued Student Peer-Distillation H3]
+    subgraph Phase 3: Cross-Model Peer Learning & Merging (H3)
+        E2_2 --> E3_0[Exp 3.0: Weight-Space Merging: Linear, TIES, DARE]
+        E3_0 --> E3_1[Exp 3.1: Plateaued Student Peer-Distillation H3]
         E3_1 --> E3_2[Exp 3.2: Bidirectional Co-Evolution & Reciprocal Transfer]
     end
 
@@ -45,7 +47,7 @@ flowchart TD
 
     subgraph Phase 5: Ecosystem-Level Ensembling & Deployment (H5)
         E4_2 --> E5_1[Exp 5.1: Consensus & Diverse Majority Voting H5]
-        E5_1 --> E5_2[Exp 5.2: Dynamic Routing vs Monolithic Model]
+        E5_1 --> E5_2[Exp 5.2: Dynamic Multi-LoRA Routing vs Monolithic Model]
     end
 
     subgraph Phase 6: Generalization & Robustness
@@ -59,18 +61,20 @@ flowchart TD
 | :---: | :--- | :--- | :---: | :---: | :--- |
 | **0** | **EXP-0.1** | Verifier & Baseline Zero-Shot Evaluation | Tooling Sanity | N/A (Inference) | Reward accuracy = 100% on test suite |
 | **1** | **EXP-0.2** | Compute Accounting & FLOPs Calibration | Tooling Sanity | N/A (Profiling) | FLOP estimation variance < 1% |
-| **2** | **EXP-1.1** | Standalone RL (GRPO) Baseline | Baseline (H1) | $1.0 \times 10^{16}$ | Stable policy gradients, >10% $\Delta$Acc |
-| **3** | **EXP-1.2** | Standalone Distillation (KD) Baseline | Baseline (H1) | $1.0 \times 10^{16}$ | Teacher trace extraction & SFT convergence |
-| **4** | **EXP-1.3** | Mixed Learning vs RL & KD at Parity | **H1** | $1.0 \times 10^{16}$ | Mixed Pareto dominates single methods |
-| **5** | **EXP-2.1** | Reward Shaping & Objective Branching | H2 Prep | $4 \times 5.0 \times 10^{15}$ | Divergent completion styles produced |
-| **6** | **EXP-2.2** | Error Orthogonality & Oracle Pass@$k$ | **H2** | N/A (Eval) | Pairwise $D_{\text{err}} \ge 0.35$, Oracle > Best |
-| **7** | **EXP-3.1** | Peer Distillation on Plateaued Students | **H3** | $5.0 \times 10^{15}$ | $\Delta\text{Acc}_{\text{distill}} > \Delta\text{Acc}_{\text{self-RL}}$ |
-| **8** | **EXP-3.2** | Bidirectional Co-Evolution & Reciprocal Transfer | **H3** | $1.0 \times 10^{16}$ | Mutual accuracy gain without forgetting |
-| **9** | **EXP-4.1** | Baseline Exploration (Random & Greedy) | H4 Baseline | $1.0 \times 10^{17}$ (Total) | Baseline Pareto frontier logged |
-| **10** | **EXP-4.2** | Adaptive Controller (`OptunaNSGAII`) | **H4** | $1.0 \times 10^{17}$ (Total) | Hypervolume $\text{HV}_{\text{adaptive}} > \text{HV}_{\text{baseline}}$ |
-| **11** | **EXP-5.1** | Diverse Majority Voting vs Self-Consistency | **H5** | N/A (Inference) | Population voting > Single-model voting |
-| **12** | **EXP-5.2** | Gated Routing & Best-of-$N$ Utility | **H5** | N/A (Inference) | Routing matches teacher at <20% cost |
-| **13** | **EXP-6.1** | Out-of-Domain Generalization & Robustness | Robustness | N/A (Inference) | Diverse ensemble retains transfer edge |
+| **2** | **EXP-1.1** | Standalone RL (GRPO) Baseline | Baseline (H1) | $1.0 \times 10^{16}$ | Stable policy gradients, >10% $\Delta$Acc (Achieved: 64.52%) |
+| **3** | **EXP-1.2** | Standalone Distillation (KD) Baseline | Baseline (H1) | $1.0 \times 10^{16}$ | Teacher trace extraction & SFT convergence (Achieved: 62.32%) |
+| **4** | **EXP-1.3** | Sequential Mixed Learning (25% KD $\to$ 75% RL) | **H1 (Mode A)** | $1.0 \times 10^{16}$ | Uncovered verbosity bloat & KL lock (Achieved: 54.21%) |
+| **5** | **EXP-1.4** | Trace-Injected & Length-Penalized GRPO | **H1 (Mode B)** | $1.0 \times 10^{16}$ | Eliminates token bloat; surpasses sequential EXP-1.3 |
+| **6** | **EXP-2.1** | Reward Shaping & Objective Branching | H2 Prep | $4 \times 5.0 \times 10^{15}$ | Divergent completion styles produced |
+| **7** | **EXP-2.2** | Error Orthogonality & Oracle Pass@$k$ | **H2** | N/A (Eval) | Pairwise $D_{\text{err}} \ge 0.35$, Oracle > Best |
+| **8** | **EXP-3.0** | Weight-Space LoRA Merging (Linear, TIES, DARE) | **H3 Baseline** | $0.0$ (Weight Merge) | Quantifies $0$-FLOP weight synthesis vs token distillation |
+| **9** | **EXP-3.1** | Peer Distillation on Plateaued Students | **H3** | $5.0 \times 10^{15}$ | $\Delta\text{Acc}_{\text{distill}} > \Delta\text{Acc}_{\text{self-RL}}$ & $\Delta\text{Acc}_{\text{merge}}$ |
+| **10** | **EXP-3.2** | Bidirectional Co-Evolution & Reciprocal Transfer | **H3** | $1.0 \times 10^{16}$ | Mutual accuracy gain without forgetting |
+| **11** | **EXP-4.1** | Baseline Exploration (Random & Greedy) | H4 Baseline | $1.0 \times 10^{17}$ (Total) | Baseline Pareto frontier logged |
+| **12** | **EXP-4.2** | Adaptive Controller (`OptunaNSGAII` / Defect-Driven) | **H4** | $1.0 \times 10^{17}$ (Total) | Hypervolume $\text{HV}_{\text{adaptive}} > \text{HV}_{\text{baseline}}$ |
+| **13** | **EXP-5.1** | Diverse Majority Voting vs Self-Consistency | **H5** | N/A (Inference) | Population voting > Single-model voting |
+| **14** | **EXP-5.2** | Multi-LoRA Gated Routing & Best-of-$N$ Utility | **H5** | N/A (Inference) | Routing matches teacher at <20% cost |
+| **15** | **EXP-6.1** | Out-of-Domain Generalization & Robustness | Robustness | N/A (Inference) | Diverse ensemble retains transfer edge |
 
 ---
 
@@ -262,13 +266,13 @@ flowchart TD
       - *Interleaved Mode:* Chains a 25% compute budget SFT stage using `distill_runner.py` directly into a 75% compute budget RL stage using `grpo_runner.py`, transferring adapter state seamlessly.
       - *Regularized GRPO Mode:* Integrates verified teacher traces into GRPO rollout batches as positive reference anchors with KL penalty constraint against the teacher distribution.
     - `configs/experiments/exp1_3_mixed_learning.yaml`: Config defining cycle split ratios, learning rates, and target FLOP boundaries.
-    - `scripts/run_h1_experiment.py`: Master benchmarking harness that runs EXP-1.1, EXP-1.2, and EXP-1.3 across 3 seeds under identical compute accounting and plots the comparative learning curves.
+    - `scripts/run_mixed_experiment.py`: Master benchmarking harness that runs EXP-1.1, EXP-1.2, and EXP-1.3 across 3 seeds under identical compute accounting and plots the comparative learning curves.
   - *Modifications & Integrations:*
     - `multigen/accounting/tracker.py`: Extended to handle phased multi-stage runs, ensuring continuous FLOP accumulation without resetting state across runner handoffs.
     - `multigen/eval/evaluator.py`: Adds intermediate periodic evaluation triggers at every $2.0 \times 10^{15}$ FLOPs checkpoint.
   - *Execution Command / CLI:*
     ```bash
-    python scripts/run_h1_experiment.py --config configs/experiments/exp1_3_mixed_learning.yaml
+    python scripts/run_mixed_experiment.py --config configs/experiments/exp1_3_mixed_learning.yaml
     ```
   - *Artifacts & Outputs:*
     - Hybrid-trained LoRA checkpoints: `checkpoints/exp1_3_mixed_{interleaved,regularized}_seed{1,2,3}/`.
@@ -277,10 +281,36 @@ flowchart TD
 
 ---
 
+### Experiment 1.4: Trace-Injected & Length-Penalized GRPO (EXP-1.4)
+- **Sequential Position:** Step 5.
+- **Prerequisites:** EXP-1.3 completed; root-cause analysis from Phase 1 Report (`result_reports/phase1_report.md`).
+- **Hypothesis Link:** **H1 (Mode B Remediation)** — *Does dynamic in-group teacher trace injection combined with conditioned length penalties resolve the verbosity bloat and KL-locking failure modes of sequential SFT-then-RL under matched compute?*
+- **Reason for Experiment:**
+  In EXP-1.3, sequential chaining (25% SFT $\to$ 75% GRPO) degraded accuracy to 54.21% because imitating the 7B teacher inflated average output length by +47% (403.9 vs 274.3 tokens), consuming rollout FLOPs and cutting total RL exploration steps by 32%, while anchoring the policy KL penalty ($\beta = 0.04$) to a verbose checkpoint. EXP-1.4 tests whether dynamically injecting a single verified teacher trace into the GRPO rollout group ($1$ teacher trace + $G-1$ self-rollouts) with an explicit length penalty preserves RL exploration steps while transferring teacher guidance on hard problems.
+- **Methodology & Setup:**
+  - Initialize directly from the frozen base model (`Qwen3-0.6B`) to avoid SFT KL-locking.
+  - During each GRPO group rollout ($G=8$), replace $1$ candidate rollout with a pre-verified concise trace from `data/teacher_traces_gsm8k.jsonl` whenever the group's empirical pass rate falls below $25\%$.
+  - Apply a conditioned length penalty: $R_{\text{total}} = R_{\text{correct}} + 0.1 R_{\text{format}} - \gamma_{\text{len}} \max(0, |o| - L_{\text{target}}) \cdot R_{\text{correct}}$ with $L_{\text{target}} = 280$.
+  - Budget: Strictly equalized at $1.0 \times 10^{16}$ FLOPs.
+- **Expectation:**
+  - Eliminates rationale verbosity bloat (mean completion length remains $<300$ tokens), restores $>550$ global RL steps, and outperforms sequential EXP-1.3 (+10% accuracy) while rivaling or exceeding standalone GRPO (64.52%).
+- **Success Metrics:**
+  - **Token Efficiency:** Mean output length $\le 300$ tokens on the GSM8K test split.
+  - **Accuracy Recovery:** Surpasses EXP-1.3 (54.21%) by $\ge +10.0$ percentage points and exceeds standalone EXP-1.1 (64.52%).
+- **Implementation & Deliverables:**
+  - *Modifications & Integrations:*
+    - `multigen/training/mixed_runner.py`: Implement `TeacherInjectedGRPORunner` supporting conditional in-group trace replacement and conditioned length penalty rewards.
+    - `configs/experiments/exp1_4_trace_injected_grpo.yaml`: Recipe configuration for Mode B mixed learning.
+  - *Artifacts & Outputs:*
+    - Checkpoint adapter: `checkpoints/exp1_4_trace_injected_seed42/`.
+    - Registered lineage node in `population_dag.json`.
+
+---
+
 ## 4. Phase 2: Behavioral Diversity & Solution Space (Hypothesis H2)
 
 ### Experiment 2.1: Multi-Objective Reward Branching (EXP-2.1)
-- **Sequential Position:** Step 5.
+- **Sequential Position:** Step 6.
 - **Prerequisites:** EXP-1.3 completed.
 - **Hypothesis Link:** Precursor to **H2 (Useful Diversity)**.
 - **Reason for Experiment:**
@@ -366,8 +396,39 @@ flowchart TD
 
 ## 5. Phase 3: Cross-Model & Peer Learning (Hypothesis H3)
 
+### Experiment 3.0: Weight-Space LoRA Merging vs Token-Space Synthesis Baseline (EXP-3.0)
+- **Sequential Position:** Step 8.
+- **Prerequisites:** EXP-1.1 (RL adapter), EXP-1.2 (KD adapter), and EXP-2.1/2.2 (diverse branch adapters) sharing the same frozen `Qwen3-0.6B` base and LoRA rank ($r=16$).
+- **Hypothesis Link:** **H3 Baseline (Weight-Space vs Token-Space Transfer)** — *Can training-free parameter-space merging ($0$ FLOPs) combine orthogonal reasoning capabilities (algebraic RL + linguistic KD) into a single adapter, or does representation/format divergence require token-space cross-distillation?*
+- **Reason for Experiment:**
+  In Phase 1, `exp1_1_grpo_seed42` (64.52%) and `exp1_2_distill_seed42` (62.32%) demonstrated an Oracle Ensemble union of **76.42%** (+11.90% above the single best model). Because both checkpoints are parameter-efficient LoRA adapters trained from the exact same base model initialization, we can test whether their orthogonal skills can be unified directly in weight space at **$0$ training FLOPs** before spending compute on token-space distillation in EXP-3.1.
+- **Methodology & Setup:**
+  - Evaluate three training-free LoRA merging algorithms using `peft` (`add_weighted_adapter`):
+    1. **Linear Model Soup (`linear`):** $\Delta W_{\text{merged}} = \alpha \Delta W_{\text{RL}} + (1 - \alpha) \Delta W_{\text{KD}}$ across $\alpha \in \{0.2, 0.35, 0.5, 0.65, 0.8\}$.
+    2. **TIES-Merging (`ties`):** Prune low-magnitude delta parameters (density $d \in \{0.5, 0.7\}$), elect dominant parameter signs to resolve conflicts ($\text{sgn}(\Delta W_{\text{RL}}) \neq \text{sgn}(\Delta W_{\text{KD}})$), and average aligned weights.
+    3. **DARE-TIES (`dare_ties`):** Randomly drop delta parameters with rate $p$ and rescale by $1/(1-p)$ prior to TIES sign consensus.
+  - Evaluate each merged adapter on the GSM8K test split ($N=1,319$) and profile how many asymmetric defect problems ($\mathcal{E}_{\text{RL}} \setminus \mathcal{E}_{\text{KD}}$ and $\mathcal{E}_{\text{KD}} \setminus \mathcal{E}_{\text{RL}}$) are retained vs degraded.
+- **Expectation:**
+  - Naive linear averaging suffers from policy and formatting interference (`\boxed{}` vs `<answer>`), while TIES/DARE recovers a partial gain over individual parents at $0$ FLOPs, establishing a rigorous zero-compute baseline that token-space peer distillation (EXP-3.1) and co-evolution (EXP-3.2) must surpass.
+- **Success Metrics:**
+  - **Zero-Compute Benchmark Established:** Complete characterization of accuracy and error retention across $\alpha$ and merging methods (`linear`, `ties`, `dare_ties`).
+  - **Interference Quantification:** Measure exact retention rate on symmetric successes ($\overline{\mathcal{E}_{\text{RL}}} \cap \overline{\mathcal{E}_{\text{KD}}}$) vs asymmetric successes ($\mathcal{E}_{\text{RL}} \oplus \mathcal{E}_{\text{KD}}$).
+- **Implementation & Deliverables:**
+  - *New Modules & Classes:*
+    - `multigen/training/merge_runner.py`: Implements LoRA parameter merging (`linear`, `ties`, `dare_ties`, `dare_linear`) wrapping `PeftModel.add_weighted_adapter`, with automated grid evaluation and DAG lineage registration (`algorithm="lora_merge"`, `flops=0.0`).
+    - `scripts/run_lora_merge.py`: CLI script executing weight-space merge sweeps between any two or more DAG nodes and logging comparative accuracy against the Oracle union.
+  - *Execution Command / CLI:*
+    ```bash
+    python scripts/run_lora_merge.py --adapters exp1_1_grpo_seed42 exp1_2_distill_seed42 --methods linear ties dare_ties --output evals/exp3_0_lora_merge.json
+    ```
+  - *Artifacts & Outputs:*
+    - Merged LoRA checkpoints: `checkpoints/exp3_0_merge_{linear,ties,dare}/`.
+    - Weight-space vs Oracle evaluation report: `evals/exp3_0_lora_merge.json`.
+
+---
+
 ### Experiment 3.1: Plateaued Student Peer-Distillation Unblocking (EXP-3.1)
-- **Sequential Position:** Step 7.
+- **Sequential Position:** Step 9.
 - **Prerequisites:** EXP-1.1 (RL plateaued checkpoint) and EXP-2.1/2.2 (diverse population checkpoints).
 - **Hypothesis Link:** **H3 (Cross-Model Learning)** — *Can distillation from a peer population member unblock or accelerate a student beyond its isolated RL trajectory?*
 - **Reason for Experiment:**

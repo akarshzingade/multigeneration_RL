@@ -38,6 +38,7 @@ try:
     from transformers import (
         AutoModelForCausalLM,
         AutoTokenizer,
+        EarlyStoppingCallback,
         Trainer,
         TrainerCallback,
         TrainerControl,
@@ -49,6 +50,7 @@ except (ImportError, NameError, Exception) as e:
     HAS_TRANSFORMERS = False
     AutoModelForCausalLM = Any  # type: ignore[assignment,misc]
     AutoTokenizer = Any  # type: ignore[assignment,misc]
+    EarlyStoppingCallback = Any  # type: ignore[assignment,misc]
     Trainer = Any  # type: ignore[assignment,misc]
     TrainingArguments = Any  # type: ignore[assignment,misc]
     TrainerCallback = Any  # type: ignore[assignment,misc]
@@ -344,12 +346,12 @@ class SFTRunner:
             intermediate_interval_flops=self.recipe.intermediate_eval_interval_flops,
             save_checkpoint_fn=save_checkpoint,
         )
+        callbacks = [callback]
 
         dataset = self.prepare_dataset(train_dataset)
         eval_data = self.prepare_dataset(eval_dataset) if eval_dataset else None
 
         # Configure SFT arguments
-        # Set max_steps to a high upper bound; termination is governed by FLOPBudgetCallback
         candidate_args = {
             "output_dir": self.output_dir,
             "learning_rate": self.recipe.learning_rate,
@@ -361,13 +363,54 @@ class SFTRunner:
             "gradient_checkpointing": True,
             "dataset_text_field": "text",
             "logging_steps": 10,
-            "save_strategy": "no",
-            "max_steps": 10000,
             "bf16": torch.cuda.is_available(),
             "fp16": False,
             "seed": self.recipe.seed,
             "report_to": "none",
+            "remove_unused_columns": False,
         }
+
+        # Plateau detection / early stopping setup
+        if self.recipe.termination_criterion == "plateau":
+            if eval_data is not None:
+                candidate_args["evaluation_strategy"] = self.recipe.eval_strategy
+                candidate_args["eval_strategy"] = self.recipe.eval_strategy
+                candidate_args["eval_steps"] = self.recipe.eval_steps
+                candidate_args["save_strategy"] = self.recipe.eval_strategy
+                candidate_args["save_steps"] = self.recipe.eval_steps
+                candidate_args["save_total_limit"] = self.recipe.save_total_limit
+                candidate_args["metric_for_best_model"] = "loss"
+                candidate_args["greater_is_better"] = False
+                candidate_args["load_best_model_at_end"] = self.recipe.load_best_model_at_end
+                if HAS_TRANSFORMERS and EarlyStoppingCallback is not None:
+                    callbacks.append(
+                        EarlyStoppingCallback(
+                            early_stopping_patience=self.recipe.early_stopping_patience,
+                            early_stopping_threshold=self.recipe.early_stopping_threshold,
+                        )
+                    )
+            else:
+                candidate_args["save_strategy"] = "no"
+                logger.warning(
+                    "[SFTRunner] Termination criterion is 'plateau' but no eval_dataset was provided. "
+                    "Evaluation and EarlyStoppingCallback disabled."
+                )
+            candidate_args["num_train_epochs"] = self.recipe.num_train_epochs or 5.0
+            if self.recipe.max_steps is not None and self.recipe.max_steps > 0:
+                candidate_args["max_steps"] = self.recipe.max_steps
+        elif self.recipe.termination_criterion == "epochs":
+            candidate_args["num_train_epochs"] = self.recipe.num_train_epochs or 1.0
+            candidate_args["save_strategy"] = "no"
+            if self.recipe.max_steps is not None and self.recipe.max_steps > 0:
+                candidate_args["max_steps"] = self.recipe.max_steps
+        elif self.recipe.termination_criterion == "steps":
+            candidate_args["max_steps"] = self.recipe.max_steps or 500
+            candidate_args["save_strategy"] = "no"
+        else:  # "flops"
+            candidate_args["save_strategy"] = "no"
+            candidate_args["max_steps"] = 10000
+            if self.recipe.num_train_epochs is not None:
+                candidate_args["num_train_epochs"] = self.recipe.num_train_epochs
 
         # Safe SFTConfig / TrainingArguments dispatch
         if HAS_TRL and hasattr(SFTConfig, "__init__"):
@@ -379,22 +422,41 @@ class SFTRunner:
             valid_args = {k: v for k, v in candidate_args.items() if k in sig.parameters}
             training_args = TrainingArguments(**valid_args)
 
-        trainer = BudgetedSFTTrainer(
-            model=model,
-            args=training_args,
-            train_dataset=dataset,
-            eval_dataset=eval_data,
-            data_collator=data_collator,
-            callbacks=[callback],
-            accumulator=self.accumulator,
-            n_base=n_base,
-            n_lora=n_lora,
-        )
+        trainer_kwargs: Dict[str, Any] = {
+            "model": model,
+            "args": training_args,
+            "train_dataset": dataset,
+            "eval_dataset": eval_data,
+            "data_collator": data_collator,
+            "callbacks": callbacks,
+            "accumulator": self.accumulator,
+            "n_base": n_base,
+            "n_lora": n_lora,
+        }
 
+        if HAS_TRL and SFTTrainer is not None and hasattr(SFTTrainer, "__init__"):
+            sft_sig = inspect.signature(SFTTrainer.__init__)
+            if "processing_class" in sft_sig.parameters:
+                trainer_kwargs["processing_class"] = tokenizer
+            elif "tokenizer" in sft_sig.parameters:
+                trainer_kwargs["tokenizer"] = tokenizer
+            if "dataset_text_field" in sft_sig.parameters:
+                trainer_kwargs["dataset_text_field"] = "text"
+            if "max_seq_length" in sft_sig.parameters:
+                trainer_kwargs["max_seq_length"] = self.recipe.max_seq_length
+
+        trainer = BudgetedSFTTrainer(**trainer_kwargs)
+
+        budget_disp = (
+            f"{self.recipe.target_flop_budget:.2e} FLOPs"
+            if self.recipe.target_flop_budget
+            else "None (unconstrained)"
+        )
         logger.info(
-            "Starting SFT distillation training on student (%s). Target budget: %.2e FLOPs",
+            "Starting SFT distillation training on student (%s). Target budget: %s, Criterion: %s",
             self.recipe.base_model_name_or_path,
-            self.recipe.target_flop_budget,
+            budget_disp,
+            self.recipe.termination_criterion,
         )
         trainer.train()
 

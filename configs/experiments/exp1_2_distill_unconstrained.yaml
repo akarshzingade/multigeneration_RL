@@ -1,0 +1,71 @@
+# ==============================================================================
+# Configuration: Experiment 1.2 - Standalone Knowledge Distillation (Unconstrained / Plateau)
+# ==============================================================================
+# Unconstrained distillation on Qwen/Qwen3-0.6B without FLOP budget ceiling.
+# Training terminates upon validation loss plateau or epoch completion.
+
+experiment_id: "exp1_2_distill_unconstrained"
+description: "Standalone Knowledge Distillation (KD) without FLOP constraint, plateau-governed early stopping"
+
+model:
+  name_or_path: "Qwen/Qwen3-0.6B"
+  torch_dtype: "bfloat16"
+
+teacher:
+  name_or_path: "Qwen/Qwen2.5-Math-7B-Instruct"
+  torch_dtype: "bfloat16"
+  k_samples: 4
+  temperature: 0.7
+  max_new_tokens: 512
+  traces_path: "data/teacher_traces_gsm8k.jsonl"
+
+peft:
+  type: "lora"
+  rank: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+
+sft:
+  learning_rate: 2.0e-4
+  batch_size: 8
+  gradient_accumulation_steps: 2
+  weight_decay: 0.01
+  warmup_ratio: 0.05
+  max_seq_length: 1024
+  response_template: "<think>"
+
+budget:
+  target_flops: null # Unconstrained: No FLOP budget cutoff
+  accounting_mode: "amortized"
+
+termination:
+  criterion: "plateau" # Options: "plateau", "epochs", "steps"
+  num_train_epochs: 3.0
+  early_stopping_patience: 3
+  early_stopping_threshold: 0.001
+  early_stopping_metric: "eval_loss"
+  eval_steps: 50
+  eval_strategy: "steps"
+
+dataset:
+  name: "openai/gsm8k"
+  subset: "main"
+  num_shots: 0
+
+output:
+  checkpoints_dir: "checkpoints/exp1_2_distill_unconstrained"
+  dag_path: "population_dag.json"
+  eval_output_dir: "evals"
+
+seeds:
+  - 42
+  - 43
+  - 44

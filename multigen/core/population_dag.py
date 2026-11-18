@@ -197,6 +197,10 @@ class PopulationDAG:
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(self.to_dict(), f, indent=2, default=str)
 
+    def save(self, filepath: str) -> None:
+        """Alias for save_to_json."""
+        self.save_to_json(filepath)
+
     @classmethod
     def load_from_json(cls, filepath: str) -> "PopulationDAG":
         """Load graph from JSON file."""
@@ -221,4 +225,13 @@ class PopulationDAG:
             elif isinstance(edge, (list, tuple)) and len(edge) >= 2:
                 dag.graph.add_edge(edge[0], edge[1])
 
+        return dag
+
+    @classmethod
+    def load_or_create(cls, filepath: str, root_model_name: str = "Qwen/Qwen3-0.6B") -> "PopulationDAG":
+        """Load DAG from JSON file if it exists, otherwise create a new DAG."""
+        if Path(filepath).exists():
+            return cls.load_from_json(filepath)
+        dag = cls(root_model_name=root_model_name)
+        dag.save_to_json(filepath)
         return dag
